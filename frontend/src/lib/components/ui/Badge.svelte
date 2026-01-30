@@ -5,6 +5,7 @@
         | "warning"
         | "danger"
         | "neutral" = "default";
+    export let size: "sm" | "md" | "lg" = "md";
 
     const styles = {
         default:
@@ -17,10 +18,15 @@
         neutral:
             "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
     };
+    const sizes = {
+        sm: "px-2 py-1 text-xs",
+        md: "px-2.5 py-0.5 text-sm",
+        lg: "px-3 py-1 text-base",
+    };
 </script>
 
 <span
-    class={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[variant]}`}
+    class={`inline-flex items-center ${sizes[size]} font-medium ${styles[variant]}`}
 >
     <slot />
 </span>

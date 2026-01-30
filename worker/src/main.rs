@@ -1,10 +1,10 @@
 use anyhow::Result;
+use chrono::Utc;
 use clap::Parser;
 use rand::Rng;
-use slurm_common::{ClusterStatus, Job, Node, Partition};
+use slurm_common::{ClusterStatus, Job, Node, Partition, Resource};
 use std::time::Duration;
 use tokio::time;
-use chrono::Utc;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -13,8 +13,8 @@ struct Args {
     /// Run in mock mode (generate fake data)
     mock: bool,
 
-    #[arg(long, default_value = "5")]
-    /// Interval in seconds
+    #[arg(long, default_value = "30")]
+    /// Polling interval in seconds
     interval: u64,
 }
 
@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     let mut interval = time::interval(Duration::from_secs(args.interval));
-
+    let mut last_status = ClusterStatus::default();
     loop {
         interval.tick().await;
 
@@ -36,8 +36,10 @@ async fn main() -> Result<()> {
             generate_mock_data()
         };
 
-        let json = serde_json::to_string(&status)?;
+        let diff = last_status.diff(&status);
+        let json = serde_json::to_string(&diff)?;
         println!("{}", json);
+        last_status = status;
     }
 }
 
@@ -48,15 +50,37 @@ fn generate_mock_data() -> ClusterStatus {
     let node_states = ["idle", "alloc", "mix", "down"];
     let mut nodes = Vec::new();
     for i in 1..=10 {
+        let mut resources = std::collections::HashMap::new();
+        // Add CPU resource
+        resources.insert(
+            "cpu".to_string(),
+            Resource {
+                res_id: "cpu".to_string(),
+                total: 64,
+                allocated: rng.gen_range(0..=64),
+            },
+        );
+
+        // Add GPU resource (maybe)
+        if i % 2 == 0 {
+            resources.insert(
+                "gpu".to_string(),
+                Resource {
+                    res_id: "gpu".to_string(),
+                    total: 4,
+                    allocated: rng.gen_range(0..=4),
+                },
+            );
+        }
+
         nodes.push(Node {
             name: format!("node{:02}", i),
             state: node_states[rng.gen_range(0..node_states.len())].to_string(),
             cpus: 64,
             real_memory: 256000,
-            features: vec!["gpu".to_string(), "infiniband".to_string()],
+            resources,
         });
     }
-
 
     let mut jobs = Vec::new();
     for i in 1..=5 {

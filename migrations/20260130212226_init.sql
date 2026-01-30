@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     state TEXT NOT NULL,
     cpus INTEGER NOT NULL,
     real_memory INTEGER NOT NULL,
-    features TEXT,
+    resources TEXT,
     updated_at DATETIME NOT NULL
 );
 

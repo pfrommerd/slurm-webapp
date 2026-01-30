@@ -5,12 +5,18 @@ export type ClusterStatus = {
     updated_at: string; // ISO string
 };
 
+export type Resource = {
+    res_id: string;
+    total: number;
+    allocated: number;
+};
+
 export type Node = {
     name: string;
     state: string; // "idle", "alloc", "down"
     cpus: number;
     real_memory: number; // in MB
-    features: string[];
+    resources: Record<string, Resource>;
 };
 
 export enum JobState {

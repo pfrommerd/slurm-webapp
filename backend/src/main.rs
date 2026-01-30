@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use axum::{extract::State, routing::get, Json, Router};
 use chrono::Utc;
+use env_logger::Env;
+use log::info;
 use slurm_common::{ClusterStatus, Job, JobState, Node, Partition};
 use sqlx::{sqlite::SqlitePoolOptions, FromRow, Pool, Sqlite};
 use std::net::SocketAddr;
@@ -14,14 +16,20 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     dotenv::dotenv().ok();
-    tracing_subscriber::fmt::init();
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         .connect(&std::env::var("DATABASE_URL")?)
         .await
         .context("Failed to connect to database in backend")?;
+
+    // Run migrations
+    sqlx::migrate!("../migrations")
+        .run(&pool)
+        .await
+        .context("Failed to run migrations")?;
 
     let state = AppState { pool };
 
@@ -35,7 +43,7 @@ async fn main() -> Result<()> {
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    println!("Backend listening on {}", addr);
+    info!("Backend listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 
@@ -83,7 +91,7 @@ struct NodeRow {
     state: String,
     cpus: i64,
     real_memory: i64,
-    features: Option<String>,
+    resources: Option<String>,
 }
 
 async fn fetch_nodes(pool: &Pool<Sqlite>) -> Result<Vec<Node>> {
@@ -98,7 +106,7 @@ async fn fetch_nodes(pool: &Pool<Sqlite>) -> Result<Vec<Node>> {
             state: row.state,
             cpus: row.cpus as u32,
             real_memory: row.real_memory,
-            features: serde_json::from_str(&row.features.unwrap_or_default()).unwrap_or_default(),
+            resources: serde_json::from_str(&row.resources.unwrap_or_default()).unwrap_or_default(),
         })
         .collect();
     Ok(nodes)

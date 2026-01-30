@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use slurm_common::ClusterStatus;
+use env_logger::Env;
+use log::{debug, error, info};
+use slurm_common::{ClusterDiff, ClusterStatus};
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -16,7 +18,9 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     dotenv::dotenv().ok();
+
     let args = Args::parse();
 
     let pool = SqlitePoolOptions::new()
@@ -27,7 +31,7 @@ async fn main() -> Result<()> {
             "Failed to connect to database. Make sure to create the file first if using sqlite, or let the backend run migrations.",
         )?;
 
-    println!(
+    info!(
         "Monitor started. Connecting to worker command: {}",
         args.worker_cmd
     );
@@ -52,14 +56,19 @@ async fn monitor_loop(cmd_str: String, pool: Pool<Sqlite>) -> Result<()> {
     let stdout = child.stdout.take().context("Failed to open stdout")?;
     let mut reader = BufReader::new(stdout).lines();
 
+    let mut status = ClusterStatus::default();
+
     while let Some(line) = reader.next_line().await? {
-        // println!("Received: {}", line); // Debug
-        if let Ok(status) = serde_json::from_str::<ClusterStatus>(&line) {
+        if let Ok(diff) = serde_json::from_str::<ClusterDiff>(&line) {
+            debug!("Received diff: {:#?}", diff);
+            status.apply(diff);
             if let Err(e) = update_db(&pool, &status).await {
-                eprintln!("Error updating DB: {}", e);
+                error!("Error updating DB: {}", e);
             } else {
-                println!("Updated cluster status at {}", status.updated_at);
+                info!("Updated cluster status at {}", status.updated_at);
             }
+        } else {
+            error!("Failed to parse line as ClusterStatus: {}", line);
         }
     }
 
@@ -69,23 +78,23 @@ async fn monitor_loop(cmd_str: String, pool: Pool<Sqlite>) -> Result<()> {
 async fn update_db(pool: &Pool<Sqlite>, status: &ClusterStatus) -> Result<()> {
     // Upsert Nodes
     for node in &status.nodes {
-        let features = serde_json::to_string(&node.features).unwrap_or_default();
+        let resources = serde_json::to_string(&node.resources).unwrap_or_default();
         sqlx::query!(
             r#"
-            INSERT INTO nodes (name, state, cpus, real_memory, features, updated_at)
+            INSERT INTO nodes (name, state, cpus, real_memory, resources, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET
                 state = excluded.state,
                 cpus = excluded.cpus,
                 real_memory = excluded.real_memory,
-                features = excluded.features,
+                resources = excluded.resources,
                 updated_at = excluded.updated_at
             "#,
             node.name,
             node.state,
             node.cpus,
             node.real_memory,
-            features,
+            resources,
             status.updated_at
         )
         .execute(pool)
