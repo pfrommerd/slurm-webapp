@@ -1,6 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+
+pub mod db;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Resource {
     pub res_id: String, // e.g. "cpu", "gpu"

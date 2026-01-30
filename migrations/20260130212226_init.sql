@@ -28,3 +28,8 @@ CREATE TABLE IF NOT EXISTS partitions (
     state TEXT NOT NULL,
     updated_at DATETIME NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
