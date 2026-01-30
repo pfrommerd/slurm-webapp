@@ -1,0 +1,144 @@
+use anyhow::{Context, Result};
+use clap::Parser;
+use slurm_common::ClusterStatus;
+use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(long, default_value = "cargo run --bin worker -- --mock")]
+    /// Command to run the worker (can be an ssh command)
+    worker_cmd: String,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    dotenv::dotenv().ok();
+    let args = Args::parse();
+
+    let pool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect(&std::env::var("DATABASE_URL")?)
+        .await
+        .context(
+            "Failed to connect to database. Make sure to create the file first if using sqlite, or let the backend run migrations.",
+        )?;
+
+    println!(
+        "Monitor started. Connecting to worker command: {}",
+        args.worker_cmd
+    );
+
+    monitor_loop(args.worker_cmd, pool).await
+}
+
+async fn monitor_loop(cmd_str: String, pool: Pool<Sqlite>) -> Result<()> {
+    // Parse the command string (simplistic splitting)
+    let parts: Vec<&str> = cmd_str.split_whitespace().collect();
+    if parts.is_empty() {
+        anyhow::bail!("Worker command cannot be empty");
+    }
+    let program = parts[0];
+    let args = &parts[1..];
+
+    let mut command = Command::new(program);
+    command.args(args);
+    command.stdout(Stdio::piped());
+
+    let mut child = command.spawn().context("Failed to spawn worker process")?;
+    let stdout = child.stdout.take().context("Failed to open stdout")?;
+    let mut reader = BufReader::new(stdout).lines();
+
+    while let Some(line) = reader.next_line().await? {
+        // println!("Received: {}", line); // Debug
+        if let Ok(status) = serde_json::from_str::<ClusterStatus>(&line) {
+            if let Err(e) = update_db(&pool, &status).await {
+                eprintln!("Error updating DB: {}", e);
+            } else {
+                println!("Updated cluster status at {}", status.updated_at);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn update_db(pool: &Pool<Sqlite>, status: &ClusterStatus) -> Result<()> {
+    // Upsert Nodes
+    for node in &status.nodes {
+        let features = serde_json::to_string(&node.features).unwrap_or_default();
+        sqlx::query!(
+            r#"
+            INSERT INTO nodes (name, state, cpus, real_memory, features, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                state = excluded.state,
+                cpus = excluded.cpus,
+                real_memory = excluded.real_memory,
+                features = excluded.features,
+                updated_at = excluded.updated_at
+            "#,
+            node.name,
+            node.state,
+            node.cpus,
+            node.real_memory,
+            features,
+            status.updated_at
+        )
+        .execute(pool)
+        .await?;
+    }
+
+    // Upsert Jobs
+    for job in &status.jobs {
+        let state = job.state.as_ref();
+        sqlx::query!(
+            r#"
+            INSERT INTO jobs (job_id, user, partition, state, num_nodes, num_cpus, time_limit, start_time, submit_time, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(job_id) DO UPDATE SET
+                state = excluded.state,
+                updated_at = excluded.updated_at
+            "#,
+            job.job_id,
+            job.user,
+            job.partition,
+            state,
+            job.num_nodes,
+            job.num_cpus,
+            job.time_limit,
+            job.start_time,
+            job.submit_time,
+            status.updated_at
+        )
+        .execute(pool)
+        .await?;
+    }
+
+    // Upsert Partitions
+    for part in &status.partitions {
+        sqlx::query!(
+            r#"
+            INSERT INTO partitions (name, total_nodes, total_cpus, state, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                total_nodes = excluded.total_nodes,
+                total_cpus = excluded.total_cpus,
+                state = excluded.state,
+                updated_at = excluded.updated_at
+            "#,
+            part.name,
+            part.total_nodes,
+            part.total_cpus,
+            part.state,
+            status.updated_at
+        )
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}

@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "worker",
+    "monitor",
+    "backend",
+    "slurm-common",
+]
+resolver = "2"
