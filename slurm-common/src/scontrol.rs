@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq)]

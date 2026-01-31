@@ -23,9 +23,9 @@ CREATE TABLE IF NOT EXISTS node_partitions (
 CREATE TABLE IF NOT EXISTS node_resources (
     node TEXT NOT NULL,
     resource TEXT NOT NULL,
-    PRIMARY KEY (node, resource)
     available INTEGER NOT NULL,
     total INTEGER NOT NULL,
+    PRIMARY KEY (node, resource)
 );
 
 CREATE TABLE IF NOT EXISTS partitions (

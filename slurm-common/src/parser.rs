@@ -1,5 +1,6 @@
 use regex::Regex;
 use serde::{de, forward_to_deserialize_any};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -25,6 +26,11 @@ impl de::Error for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+pub fn from_str<'de, T: de::Deserialize<'de>>(input: &'de str) -> Result<T> {
+    let deserializer = SlurmDeserializer::from_str(input);
+    T::deserialize(deserializer)
+}
 
 pub struct SlurmDeserializer<'de> {
     input: &'de str,
@@ -117,15 +123,27 @@ impl<'de> de::Deserializer<'de> for SlurmDeserializer<'de> {
             if value.is_empty() || value == "(null)" || value == "None" {
                 continue;
             }
-
-            map.insert(key, value);
+            match map.entry(key) {
+                Entry::Occupied(mut entry) => {
+                    let existing = entry.get_mut();
+                    match existing {
+                        SlurmValue::Single(s) => {
+                            *existing = SlurmValue::Repeated(vec![s, value]);
+                        }
+                        SlurmValue::Repeated(v) => v.push(value),
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(SlurmValue::Single(value));
+                }
+            }
         }
 
         // Convert to vec for MapAccess
         // We sort keys? No, MapAccess doesn't require order unless struct requires it?
         // Actually standard HashMap iteration is random. Serde is fine with that for maps/structs usually.
-        let items: Vec<(&str, &str)> = map.into_iter().collect();
-        visitor.visit_map(SlurmMapAccess { items, current: 0 })
+        let items: Vec<(&str, SlurmValue<'de>)> = map.into_iter().collect();
+        visitor.visit_map(SlurmRecord { items, current: 0 })
     }
 
     forward_to_deserialize_any! {
@@ -157,12 +175,12 @@ impl<'de> de::SeqAccess<'de> for RecordSeq<'de> {
     }
 }
 
-struct SlurmMapAccess<'de> {
-    items: Vec<(&'de str, &'de str)>,
+struct SlurmRecord<'de> {
+    items: Vec<(&'de str, SlurmValue<'de>)>,
     current: usize,
 }
 
-impl<'de> de::MapAccess<'de> for SlurmMapAccess<'de> {
+impl<'de> de::MapAccess<'de> for SlurmRecord<'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
@@ -181,24 +199,37 @@ impl<'de> de::MapAccess<'de> for SlurmMapAccess<'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        let value = &self.items[self.current].1;
+        let value = self.items[self.current].1.clone();
         self.current += 1;
         // Use our ValueDeserializer that can parse strings into numbers
-        seed.deserialize(ValueDeserializer::from_str(value))
+        seed.deserialize(value)
     }
 }
 // A value in a record
-struct ValueDeserializer<'de> {
-    input: &'de str,
+#[derive(Clone)]
+enum SlurmValue<'de> {
+    Single(&'de str),
+    Repeated(Vec<&'de str>), // A key that appears multiple times
 }
 
-impl<'de> ValueDeserializer<'de> {
-    fn from_str(input: &'de str) -> Self {
-        ValueDeserializer { input }
+// Use paste! macro to implement the visitor for each number type
+macro_rules! impl_num_visitor {
+    {$($type:ident)*} => {
+        paste::paste! {
+            $(fn [<deserialize_ $type>]<V>(self, visitor: V) -> Result<V::Value>
+            where
+                V: de::Visitor<'de>,
+            {
+                match self {
+                    SlurmValue::Single(s) => visitor.[<visit_ $type>](s.parse().map_err(de::Error::custom)?),
+                    SlurmValue::Repeated(_) => self.deserialize_any(visitor),
+                }
+            })*
+        }
     }
 }
 
-impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
+impl<'de> de::Deserializer<'de> for SlurmValue<'de> {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
@@ -206,68 +237,38 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         V: de::Visitor<'de>,
     {
         // Default to string
-        visitor.visit_str(self.input)
+        match self {
+            SlurmValue::Single(s) => visitor.visit_str(s),
+            SlurmValue::Repeated(v) => visitor.visit_seq(ValueSeq {
+                values: v,
+                current: 0,
+            }),
+        }
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        // Since we filtered NULLs at map level, if we are here, it's Some.
+        // Since we filtered NULLs/Nones at map level, if we are here, it's Some.
         visitor.visit_some(self)
-    }
-
-    // Number parsing
-    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_u64(self.input.parse().map_err(de::Error::custom)?)
-    }
-    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_i64(self.input.parse().map_err(de::Error::custom)?)
-    }
-    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_u32(self.input.parse().map_err(de::Error::custom)?)
-    }
-    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_i32(self.input.parse().map_err(de::Error::custom)?)
-    }
-    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_f32(self.input.parse().map_err(de::Error::custom)?)
-    }
-    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_f64(self.input.parse().map_err(de::Error::custom)?)
     }
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        if self.input == "1" || self.input.eq_ignore_ascii_case("true") {
-            visitor.visit_bool(true)
-        } else if self.input == "0" || self.input.eq_ignore_ascii_case("false") {
-            visitor.visit_bool(false)
-        } else {
-            Err(de::Error::custom(format!(
-                "Expected bool, got {}",
-                self.input
-            )))
+        match self {
+            SlurmValue::Single(s) => {
+                if s == "1" || s.eq_ignore_ascii_case("true") {
+                    visitor.visit_bool(true)
+                } else if s == "0" || s.eq_ignore_ascii_case("false") {
+                    visitor.visit_bool(false)
+                } else {
+                    Err(de::Error::custom(format!("Expected bool, got {}", s)))
+                }
+            }
+            SlurmValue::Repeated(_) => self.deserialize_any(visitor),
         }
     }
 
@@ -276,24 +277,38 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_seq(ValueSeq {
-            values: self.input.split(",").collect(),
-            current: 0,
-        })
+        match self {
+            SlurmValue::Single(s) => visitor.visit_seq(ValueSeq {
+                values: s.split(",").collect(),
+                current: 0,
+            }),
+            SlurmValue::Repeated(v) => visitor.visit_seq(ValueSeq {
+                values: v,
+                current: 0,
+            }),
+        }
     }
 
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        let items = self
-            .input
-            .split(",")
-            .map(|s| {
-                s.split_once("=")
-                    .ok_or(de::Error::custom("Invalid key-value pair"))
-            })
-            .collect::<Result<Vec<(_, _)>>>()?;
+        let items = match self {
+            SlurmValue::Single(s) => s
+                .split(",")
+                .map(|s| {
+                    s.split_once("=")
+                        .ok_or(de::Error::custom("Invalid key-value pair"))
+                })
+                .collect::<Result<Vec<(_, _)>>>()?,
+            SlurmValue::Repeated(v) => v
+                .iter()
+                .map(|s| {
+                    s.split_once("=")
+                        .ok_or(de::Error::custom("Invalid key-value pair"))
+                })
+                .collect::<Result<Vec<(_, _)>>>()?,
+        };
         visitor.visit_map(ValueMap { items, current: 0 })
     }
 
@@ -301,17 +316,26 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_str(self.input)
+        match self {
+            SlurmValue::Single(s) => visitor.visit_str(s),
+            SlurmValue::Repeated(v) => visitor.visit_str(v[0]),
+        }
     }
 
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        visitor.visit_seq(ValueSeq {
-            values: self.input.split(",").collect(),
-            current: 0,
-        })
+        match self {
+            SlurmValue::Single(s) => visitor.visit_seq(ValueSeq {
+                values: s.split(",").collect(),
+                current: 0,
+            }),
+            SlurmValue::Repeated(v) => visitor.visit_seq(ValueSeq {
+                values: v,
+                current: 0,
+            }),
+        }
     }
 
     fn deserialize_tuple_struct<V>(self, _name: &str, _len: usize, visitor: V) -> Result<V::Value>
@@ -327,8 +351,13 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         self.deserialize_map(visitor)
     }
 
+    impl_num_visitor! {
+        u8 u16 i8 i16 u128 i128
+        u64 u32 i64 i32 f32 f64
+    }
+
     forward_to_deserialize_any! {
-        u8 u16 i8 i16 u128 i128 char str string
+        char str string
         bytes byte_buf unit unit_struct newtype_struct enum ignored_any
     }
 }
@@ -351,8 +380,7 @@ impl<'de> de::SeqAccess<'de> for ValueSeq<'de> {
         }
         let value = self.values[self.current];
         self.current += 1;
-        seed.deserialize(ValueDeserializer::from_str(value))
-            .map(Some)
+        seed.deserialize(SlurmValue::Single(value)).map(Some)
     }
 }
 
@@ -382,7 +410,7 @@ impl<'de> de::MapAccess<'de> for ValueMap<'de> {
     {
         let value = self.items[self.current].1;
         self.current += 1;
-        seed.deserialize(ValueDeserializer::from_str(value))
+        seed.deserialize(SlurmValue::Single(value))
     }
 }
 
@@ -491,8 +519,7 @@ mod tests {
         let input = "cpu=64,mem=1031314M,billing=64,gres/gpu=4,gres/gpu:l40s=4";
 
         // Dynamic map, expecting raw strings content
-        let map =
-            HashMap::<String, String>::deserialize(ValueDeserializer::from_str(input)).unwrap();
+        let map = HashMap::<String, String>::deserialize(SlurmValue::Single(input)).unwrap();
         println!("{:?}", map);
         assert_eq!(map.get("cpu").unwrap(), "64");
         assert_eq!(map.get("mem").unwrap(), "1031314M");
