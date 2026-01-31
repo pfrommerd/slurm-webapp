@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use clap::Parser;
 use rand::Rng;
-use slurm_common::{ClusterStatus, Job, Node, Partition, Resource};
+use slurm_common::{ClusterState, Job, Node, NodeStatus, Partition, PartitionStatus, Resource};
 use std::time::Duration;
 use tokio::time;
 
@@ -23,31 +23,37 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     let mut interval = time::interval(Duration::from_secs(args.interval));
-    let mut last_status = ClusterStatus::default();
+    let mut last_state = ClusterState::default();
     loop {
         interval.tick().await;
 
-        let status = if args.mock {
-            generate_mock_data()
+        let state = if args.mock {
+            Ok(generate_mock_data())
         } else {
-            // TODO: partial implementation of real SLURM commands
-            // For now, we fall back to mock or empty
-            eprintln!("Real SLURM data collection not fully implemented yet, sending mock data anyway for testing.");
-            generate_mock_data()
+            Err("Not implemented")
         };
-
-        let diff = last_status.diff(&status);
-        let json = serde_json::to_string(&diff)?;
-        println!("{}", json);
-        last_status = status;
+        match state {
+            Ok(state) => {
+                let diff = last_state.diff(&state);
+                let json = serde_json::to_string(&diff)?;
+                println!("{}", json);
+                last_state = state;
+            }
+            Err(e) => eprintln!("Error: {}", e),
+        }
     }
 }
 
-fn generate_mock_data() -> ClusterStatus {
+fn generate_mock_data() -> ClusterState {
     let mut rng = rand::thread_rng();
     let updated_at = Utc::now();
 
-    let node_states = ["idle", "alloc", "mix", "down"];
+    let node_states = [
+        NodeStatus::Idle,
+        NodeStatus::Alloc,
+        NodeStatus::Mix,
+        NodeStatus::Down,
+    ];
     let mut nodes = Vec::new();
     for i in 1..=10 {
         let mut resources = std::collections::HashMap::new();
@@ -75,10 +81,11 @@ fn generate_mock_data() -> ClusterStatus {
 
         nodes.push(Node {
             name: format!("node{:02}", i),
-            state: node_states[rng.gen_range(0..node_states.len())].to_string(),
+            status: node_states[rng.gen_range(0..node_states.len())],
             cpus: 64,
             real_memory: 256000,
             resources,
+            updated_at,
         });
     }
 
@@ -88,16 +95,17 @@ fn generate_mock_data() -> ClusterStatus {
             job_id: format!("{}", 1000 + i),
             user: format!("user{}", rng.gen_range(1..5)),
             partition: "gpu".to_string(),
-            state: match rng.gen_range(0..3) {
-                0 => slurm_common::JobState::PENDING,
-                1 => slurm_common::JobState::RUNNING,
-                _ => slurm_common::JobState::COMPLETED,
+            status: match rng.gen_range(0..3) {
+                0 => slurm_common::JobStatus::Pending,
+                1 => slurm_common::JobStatus::Running,
+                _ => slurm_common::JobStatus::Completed,
             },
             num_nodes: rng.gen_range(1..4),
             num_cpus: rng.gen_range(1..128),
             time_limit: Some("12:00:00".to_string()),
             start_time: Some(Utc::now()),
             submit_time: Utc::now(),
+            updated_at,
         });
     }
 
@@ -106,20 +114,22 @@ fn generate_mock_data() -> ClusterStatus {
             name: "gpu".to_string(),
             total_nodes: 10,
             total_cpus: 640,
-            state: "UP".to_string(),
+            status: PartitionStatus::Up,
+            updated_at,
         },
         Partition {
             name: "standard".to_string(),
             total_nodes: 20,
             total_cpus: 1280,
-            state: "UP".to_string(),
+            status: PartitionStatus::Up,
+            updated_at,
         },
     ];
 
-    ClusterStatus {
+    ClusterState {
         nodes,
         jobs,
         partitions,
-        updated_at,
+        updated_at: Some(updated_at),
     }
 }

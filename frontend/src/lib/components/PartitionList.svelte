@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { Partition } from "$lib/types";
+    import { PartitionStatus, type Partition } from "$lib/types";
     import Table from "./ui/Table.svelte";
     import TableHeader from "./ui/TableHeader.svelte";
     import TableBody from "./ui/TableBody.svelte";
@@ -10,9 +10,9 @@
 
     export let partitions: Partition[] = [];
 
-    function getStateVariant(state: string) {
-        if (state === "UP") return "success";
-        if (state === "DOWN") return "danger";
+    function getStateVariant(state: PartitionStatus) {
+        if (state === PartitionStatus.UP) return "success";
+        if (state === PartitionStatus.DOWN) return "danger";
         return "neutral";
     }
 </script>
@@ -39,8 +39,8 @@
                         ></TableCell
                     >
                     <TableCell>
-                        <Badge variant={getStateVariant(part.state)}
-                            >{part.state}</Badge
+                        <Badge variant={getStateVariant(part.status)}
+                            >{part.status}</Badge
                         >
                     </TableCell>
                     <TableCell>{part.total_nodes}</TableCell>

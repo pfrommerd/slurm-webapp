@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { Node } from "$lib/types";
+    import { type Node, NodeStatus } from "$lib/types";
     import Table from "./ui/Table.svelte";
     import TableHeader from "./ui/TableHeader.svelte";
     import TableBody from "./ui/TableBody.svelte";
@@ -10,10 +10,10 @@
 
     export let nodes: Node[] = [];
 
-    function getStateVariant(state: string) {
-        if (state.includes("idle")) return "success";
-        if (state.includes("down") || state.includes("drain")) return "danger";
-        if (state.includes("alloc") || state.includes("mix")) return "warning";
+    function getStateVariant(state: NodeStatus) {
+        if (state === NodeStatus.IDLE) return "success";
+        if (state === NodeStatus.DOWN) return "danger";
+        if (state === NodeStatus.MIX) return "warning";
         return "neutral";
     }
 </script>
@@ -41,8 +41,8 @@
                         ></TableCell
                     >
                     <TableCell>
-                        <Badge variant={getStateVariant(node.state)}
-                            >{node.state}</Badge
+                        <Badge variant={getStateVariant(node.status)}
+                            >{node.status}</Badge
                         >
                     </TableCell>
                     <TableCell>{node.cpus}</TableCell>

@@ -1,7 +1,7 @@
 -- Add migration script here
 CREATE TABLE IF NOT EXISTS nodes (
     name TEXT PRIMARY KEY,
-    state TEXT NOT NULL,
+    status TEXT NOT NULL,
     cpus INTEGER NOT NULL,
     real_memory INTEGER NOT NULL,
     resources TEXT,
@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     job_id TEXT PRIMARY KEY,
     user TEXT NOT NULL,
     partition TEXT NOT NULL,
-    state TEXT NOT NULL,
+    status TEXT NOT NULL,
     num_nodes INTEGER NOT NULL,
     num_cpus INTEGER NOT NULL,
     time_limit TEXT,
@@ -25,11 +25,6 @@ CREATE TABLE IF NOT EXISTS partitions (
     name TEXT PRIMARY KEY,
     total_nodes INTEGER NOT NULL,
     total_cpus INTEGER NOT NULL,
-    state TEXT NOT NULL,
+    status TEXT NOT NULL,
     updated_at DATETIME NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS metadata (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
 );

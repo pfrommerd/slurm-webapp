@@ -11,28 +11,35 @@ export type Resource = {
     allocated: number;
 };
 
+export enum NodeStatus {
+    IDLE = "Idle",
+    MIX = "Mix",
+    ALLOC = "Alloc",
+    DOWN = "Down",
+}
+
 export type Node = {
     name: string;
-    state: string; // "idle", "alloc", "down"
+    status: NodeStatus;
     cpus: number;
     real_memory: number; // in MB
     resources: Record<string, Resource>;
 };
 
-export enum JobState {
-    PENDING = "PENDING",
-    RUNNING = "RUNNING",
-    COMPLETED = "COMPLETED",
-    FAILED = "FAILED",
-    CANCELLED = "CANCELLED",
-    UNKNOWN = "UNKNOWN",
+export enum JobStatus {
+    PENDING = "Pending",
+    RUNNING = "Running",
+    COMPLETED = "Completed",
+    FAILED = "Failed",
+    CANCELLED = "Cancelled",
+    UNKNOWN = "Unknown",
 }
 
 export type Job = {
     job_id: string;
     user: string;
     partition: string;
-    state: JobState;
+    status: JobStatus;
     num_nodes: number;
     num_cpus: number;
     time_limit: string | null;
@@ -40,9 +47,15 @@ export type Job = {
     submit_time: string; // ISO string
 };
 
+export enum PartitionStatus {
+    UP = "Up",
+    DOWN = "Down",
+    Unknown = "Unknown",
+}
+
 export type Partition = {
     name: string;
     total_nodes: number;
     total_cpus: number;
-    state: string; // "UP", "DOWN"
+    status: PartitionStatus;
 };

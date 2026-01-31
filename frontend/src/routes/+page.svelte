@@ -14,6 +14,7 @@
     async function refresh() {
         try {
             status = await fetchStatus();
+            console.log(status);
             error = null;
         } catch (e) {
             console.error(e);

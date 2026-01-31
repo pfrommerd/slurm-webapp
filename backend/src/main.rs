@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
 use axum::{extract::State, routing::get, Json, Router};
-use chrono::{DateTime, Utc};
 use env_logger::Env;
 use log::info;
-use slurm_common::{db, Job, Node, Partition};
+use slurm_common::{db, ClusterState, Job, Node, Partition};
 
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::net::SocketAddr;
@@ -35,7 +34,7 @@ async fn main() -> Result<()> {
     let state = AppState { pool };
 
     let app = Router::new()
-        .route("/api/updated_at", get(get_updated_at))
+        .route("/api/status", get(get_status))
         .route("/api/nodes", get(get_nodes))
         .route("/api/jobs", get(get_jobs))
         .route("/api/partitions", get(get_partitions))
@@ -51,11 +50,11 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn get_updated_at(State(state): State<AppState>) -> Json<Option<DateTime<Utc>>> {
-    let updated_at = db::fetch_metadata::<DateTime<Utc>>(&state.pool, "last_updated")
+async fn get_status(State(state): State<AppState>) -> Json<ClusterState> {
+    let status = db::fetch_cluster_state(&state.pool)
         .await
-        .unwrap_or(None);
-    Json(updated_at)
+        .unwrap_or_default();
+    Json(status)
 }
 
 async fn get_nodes(State(state): State<AppState>) -> Json<Vec<Node>> {

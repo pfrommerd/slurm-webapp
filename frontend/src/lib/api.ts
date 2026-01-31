@@ -25,3 +25,10 @@ export async function fetchPartitions(): Promise<Partition[]> {
     if (!res.ok) throw new Error('Failed to fetch partitions');
     return res.json();
 }
+
+export async function fetchUpdatedAt(): Promise<string | null> {
+    const res = await fetch(`${API_BASE}/updated_at`);
+    if (!res.ok) throw new Error('Failed to fetch updated_at');
+    return res.json();
+}
+

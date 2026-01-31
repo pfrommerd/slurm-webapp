@@ -1,6 +1,5 @@
 <script lang="ts">
-    import type { Job } from "$lib/types";
-    import { JobState } from "$lib/types";
+    import { type Job, JobStatus } from "$lib/types";
     import Table from "./ui/Table.svelte";
     import TableHeader from "./ui/TableHeader.svelte";
     import TableBody from "./ui/TableBody.svelte";
@@ -11,17 +10,17 @@
 
     export let jobs: Job[] = [];
 
-    function getStateVariant(state: JobState) {
+    function getStateVariant(state: JobStatus) {
         switch (state) {
-            case JobState.RUNNING:
+            case JobStatus.RUNNING:
                 return "success";
-            case JobState.PENDING:
+            case JobStatus.PENDING:
                 return "warning";
-            case JobState.FAILED:
+            case JobStatus.FAILED:
                 return "danger";
-            case JobState.CANCELLED:
+            case JobStatus.CANCELLED:
                 return "neutral";
-            case JobState.COMPLETED:
+            case JobStatus.COMPLETED:
                 return "success";
             default:
                 return "neutral";
@@ -60,8 +59,8 @@
                     <TableCell>{job.user}</TableCell>
                     <TableCell>{job.partition}</TableCell>
                     <TableCell>
-                        <Badge variant={getStateVariant(job.state)}
-                            >{job.state}</Badge
+                        <Badge variant={getStateVariant(job.status)}
+                            >{job.status}</Badge
                         >
                     </TableCell>
                     <TableCell>{job.num_nodes} ({job.num_cpus} CPUs)</TableCell>
