@@ -6,6 +6,8 @@ use std::str::FromStr;
 
 #[cfg(feature = "db")]
 pub mod db;
+pub mod parser;
+pub mod scontrol;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Resource {
