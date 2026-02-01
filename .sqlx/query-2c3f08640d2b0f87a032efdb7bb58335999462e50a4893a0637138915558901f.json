@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM job_allocations WHERE job_id = ? AND node = ? AND resource = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "2c3f08640d2b0f87a032efdb7bb58335999462e50a4893a0637138915558901f"
+}

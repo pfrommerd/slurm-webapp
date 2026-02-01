@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO job_allocations (job_id, node, resource, used)\n        VALUES (?, ?, ?, ?)\n        ON CONFLICT(job_id, node, resource) DO UPDATE SET\n            used = excluded.used\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "dfdaaae94a76da8c91f0217d18fe1b75b8945c613bb87672a532dce51c80eb31"
+}

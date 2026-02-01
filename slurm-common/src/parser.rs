@@ -8,6 +8,13 @@ use std::fmt;
 pub struct Error {
     message: String,
 }
+impl Error {
+    fn custom<T: fmt::Display>(msg: T) -> Self {
+        Error {
+            message: msg.to_string(),
+        }
+    }
+}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -97,12 +104,10 @@ impl<'de> de::Deserializer<'de> for SlurmDeserializer<'de> {
             .map_err(|e| de::Error::custom(e.to_string()))?;
 
         let matches: Vec<_> = key_regex.find_iter(record).collect();
-        println!("matches: {:?}", matches);
 
         for i in 0..matches.len() {
             let m = matches[i];
             let key_capture = key_regex.captures(m.as_str()).unwrap().get(1).unwrap();
-            println!("key capture: {}", m.as_str());
             let key = key_capture.as_str();
 
             let val_start = m.end();
@@ -113,14 +118,10 @@ impl<'de> de::Deserializer<'de> for SlurmDeserializer<'de> {
             };
 
             let raw_value = &record[val_start..val_end];
-            let value = raw_value.trim_matches(|c| c == ' ' || c == '\n' || c == ',' || c == '\r');
-            println!(
-                "key: {}, value: {}, val_start: {}, val_end: {}",
-                key, value, val_start, val_end
-            );
+            let value = raw_value.trim();
 
-            // Skip "null," None, or empty values
-            if value.is_empty() || value == "(null)" || value == "None" {
+            // Skip "null" or None or N/A values
+            if value == "(null)" || value == "None" || value == "N/A" {
                 continue;
             }
             match map.entry(key) {
@@ -221,7 +222,9 @@ macro_rules! impl_num_visitor {
                 V: de::Visitor<'de>,
             {
                 match self {
-                    SlurmValue::Single(s) => visitor.[<visit_ $type>](s.parse().map_err(de::Error::custom)?),
+                    SlurmValue::Single(s) => visitor.[<visit_ $type>](
+                        s.parse().map_err(|_| de::Error::custom(format!("Invalid number: {}", s)))?
+                    ),
                     SlurmValue::Repeated(_) => self.deserialize_any(visitor),
                 }
             })*
@@ -238,14 +241,13 @@ impl<'de> de::Deserializer<'de> for SlurmValue<'de> {
     {
         // Default to string
         match self {
-            SlurmValue::Single(s) => visitor.visit_str(s),
+            SlurmValue::Single(s) => visitor.visit_borrowed_str(s),
             SlurmValue::Repeated(v) => visitor.visit_seq(ValueSeq {
                 values: v,
                 current: 0,
             }),
         }
     }
-
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -296,18 +298,14 @@ impl<'de> de::Deserializer<'de> for SlurmValue<'de> {
         let items = match self {
             SlurmValue::Single(s) => s
                 .split(",")
+                .filter(|s| !s.trim().is_empty())
                 .map(|s| {
-                    s.split_once("=")
-                        .ok_or(de::Error::custom("Invalid key-value pair"))
+                    s.trim()
+                        .split_once("=")
+                        .ok_or(de::Error::custom(format!("Invalid key-value pair: {}", s)))
                 })
-                .collect::<Result<Vec<(_, _)>>>()?,
-            SlurmValue::Repeated(v) => v
-                .iter()
-                .map(|s| {
-                    s.split_once("=")
-                        .ok_or(de::Error::custom("Invalid key-value pair"))
-                })
-                .collect::<Result<Vec<(_, _)>>>()?,
+                .collect::<Result<Vec<(&'de str, &'de str)>>>()?,
+            SlurmValue::Repeated(_) => return self.deserialize_any(visitor),
         };
         visitor.visit_map(ValueMap { items, current: 0 })
     }
@@ -317,8 +315,8 @@ impl<'de> de::Deserializer<'de> for SlurmValue<'de> {
         V: de::Visitor<'de>,
     {
         match self {
-            SlurmValue::Single(s) => visitor.visit_str(s),
-            SlurmValue::Repeated(v) => visitor.visit_str(v[0]),
+            SlurmValue::Single(s) => visitor.visit_borrowed_str(s),
+            SlurmValue::Repeated(v) => visitor.visit_borrowed_str(v[0]),
         }
     }
 
@@ -351,14 +349,70 @@ impl<'de> de::Deserializer<'de> for SlurmValue<'de> {
         self.deserialize_map(visitor)
     }
 
+    fn deserialize_enum<V>(self, _name: &str, _variants: &[&str], visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self {
+            SlurmValue::Single(s) => visitor.visit_enum(ValueEnum { value: s }),
+            SlurmValue::Repeated(_) => self.deserialize_any(visitor),
+        }
+    }
+
     impl_num_visitor! {
         u8 u16 i8 i16 u128 i128
         u64 u32 i64 i32 f32 f64
     }
 
     forward_to_deserialize_any! {
-        char str string
-        bytes byte_buf unit unit_struct newtype_struct enum ignored_any
+        char string str bytes byte_buf unit unit_struct newtype_struct ignored_any
+    }
+}
+
+struct ValueEnum<'de> {
+    value: &'de str,
+}
+
+impl<'de> de::EnumAccess<'de> for ValueEnum<'de> {
+    type Variant = EnumVariant;
+    type Error = Error;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
+    where
+        V: de::DeserializeSeed<'de>,
+    {
+        seed.deserialize(SlurmValue::Single(self.value))
+            .map(|v| (v, EnumVariant))
+    }
+}
+struct EnumVariant;
+
+impl<'de> de::VariantAccess<'de> for EnumVariant {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<()> {
+        Ok(())
+    }
+
+    fn newtype_variant_seed<T>(self, _seed: T) -> Result<T::Value>
+    where
+        T: de::DeserializeSeed<'de>,
+    {
+        Err(Error::custom("Newtype variant not supported"))
+    }
+
+    fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        Err(Error::custom("Tuple variant not supported"))
+    }
+
+    fn struct_variant<V>(self, _fields: &'static [&'static str], _visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        Err(Error::custom("Struct variant not supported"))
     }
 }
 
@@ -400,8 +454,7 @@ impl<'de> de::MapAccess<'de> for ValueMap<'de> {
             return Ok(None);
         }
         let key = self.items[self.current].0;
-        seed.deserialize(de::value::StrDeserializer::new(key))
-            .map(Some)
+        seed.deserialize(SlurmValue::Single(key)).map(Some)
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
@@ -452,7 +505,6 @@ mod tests {
         }
 
         let node: Node = Node::deserialize(SlurmDeserializer::from_str(input)).unwrap();
-        println!("{:?}", node);
         assert_eq!(node.NodeName, "node4504");
         assert_eq!(node.Arch, "x86_64");
         assert_eq!(node.CoresPerSocket, 32);
@@ -505,7 +557,6 @@ mod tests {
         }
 
         let job: Job = Job::deserialize(SlurmDeserializer::from_str(input)).unwrap();
-        println!("{:?}", job);
         assert_eq!(job.JobId, 8601779);
         assert_eq!(job.JobName, "8445fb49-9088-4fd5-b463-65b76bf6c4bb");
         assert_eq!(job.JobState, "RUNNING");
@@ -519,12 +570,11 @@ mod tests {
         let input = "cpu=64,mem=1031314M,billing=64,gres/gpu=4,gres/gpu:l40s=4";
 
         // Dynamic map, expecting raw strings content
-        let map = HashMap::<String, String>::deserialize(SlurmValue::Single(input)).unwrap();
-        println!("{:?}", map);
-        assert_eq!(map.get("cpu").unwrap(), "64");
-        assert_eq!(map.get("mem").unwrap(), "1031314M");
-        assert_eq!(map.get("gres/gpu").unwrap(), "4");
-        assert_eq!(map.get("gres/gpu:l40s").unwrap(), "4");
+        let map = HashMap::<&str, &str>::deserialize(SlurmValue::Single(input)).unwrap();
+        assert_eq!(map.get("cpu").unwrap(), &"64");
+        assert_eq!(map.get("mem").unwrap(), &"1031314M");
+        assert_eq!(map.get("gres/gpu").unwrap(), &"4");
+        assert_eq!(map.get("gres/gpu:l40s").unwrap(), &"4");
     }
 
     #[test]
@@ -544,5 +594,21 @@ mod tests {
         assert_eq!(nodes[0].State, "IDLE");
         assert_eq!(nodes[1].NodeName, "node2");
         assert_eq!(nodes[1].State, "ALLOCATED");
+    }
+
+    #[test]
+    fn test_parse_enum() {
+        let input = "RUNNING";
+
+        #[allow(non_snake_case)]
+        #[derive(Deserialize, Debug, PartialEq)]
+        enum JobState {
+            RUNNING,
+            IDLE,
+            PENDING,
+        }
+
+        let job_state = JobState::deserialize(SlurmValue::Single(input)).unwrap();
+        assert_eq!(job_state, JobState::RUNNING);
     }
 }

@@ -204,9 +204,10 @@ impl<'r> FromRow<'r, SqliteRow> for Job {
     fn from_row(row: &'r SqliteRow) -> Result<Self, sqlx::Error> {
         let job_id_str: String = row.try_get("job_id")?;
         let user: String = row.try_get("user")?;
+        let name: String = row.try_get("name")?;
         let partition: String = row.try_get("partition")?;
         let status_str: String = row.try_get("status")?;
-        let time_limit: Option<String> = row.try_get("time_limit")?;
+        let time_limit: Option<i64> = row.try_get("time_limit")?;
         let start_time: Option<DateTime<Utc>> = row.try_get("start_time")?;
         let submit_time: DateTime<Utc> = row.try_get("submit_time")?;
         let updated_at: DateTime<Utc> = row.try_get("updated_at")?;
@@ -216,6 +217,7 @@ impl<'r> FromRow<'r, SqliteRow> for Job {
 
         Ok(Job {
             job_id: JobId(job_id_val),
+            name,
             user,
             partition,
             status,
@@ -239,9 +241,10 @@ pub async fn upsert_job(pool: &Pool<Sqlite>, job: &Job) -> Result<()> {
     let job_id_str = job.job_id.0.to_string();
     sqlx::query!(
         r#"
-        INSERT INTO jobs (job_id, user, partition, status, time_limit, start_time, submit_time, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO jobs (job_id, name, user, partition, status, time_limit, start_time, submit_time, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(job_id) DO UPDATE SET
+            name = excluded.name,
             user = excluded.user,
             partition = excluded.partition,
             status = excluded.status,
@@ -251,6 +254,7 @@ pub async fn upsert_job(pool: &Pool<Sqlite>, job: &Job) -> Result<()> {
             updated_at = excluded.updated_at
         "#,
         job_id_str,
+        job.name,
         job.user,
         job.partition,
         status,
@@ -407,25 +411,16 @@ impl<'r> FromRow<'r, SqliteRow> for Partition {
         let status_str: String = row.try_get("status")?;
         let status = serde_json::from_str(&status_str).unwrap_or(PartitionStatus::Unknown);
 
-        let total_cpus: i64 = row.try_get("total_cpus")?;
-        let total_cpus_alloc: i64 = row.try_get("total_cpus_alloc")?;
-        let total_cpus_idle: i64 = row.try_get("total_cpus_idle")?;
-
-        let total_memory: i64 = row.try_get("total_memory")?;
-        let total_memory_alloc: i64 = row.try_get("total_memory_alloc")?;
-        let total_memory_free: i64 = row.try_get("total_memory_free")?;
+        let access_qos: Option<String> = row.try_get("access_qos")?;
+        let resource_qos: Option<String> = row.try_get("resource_qos")?;
 
         let updated_at: DateTime<Utc> = row.try_get("updated_at")?;
 
         Ok(Partition {
             name,
             status,
-            total_cpus: total_cpus as u32,
-            total_cpus_alloc: total_cpus_alloc as u32,
-            total_cpus_idle: total_cpus_idle as u32,
-            total_memory,
-            total_memory_alloc,
-            total_memory_free,
+            access_qos,
+            resource_qos,
             updated_at,
         })
     }
@@ -442,26 +437,18 @@ pub async fn upsert_partition(pool: &Pool<Sqlite>, part: &Partition) -> Result<(
     let status = serde_json::to_string(&part.status).unwrap_or_default();
     sqlx::query!(
         r#"
-        INSERT INTO partitions (name, status, total_cpus, total_cpus_alloc, total_cpus_idle, total_memory, total_memory_alloc, total_memory_free, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO partitions (name, status, access_qos, resource_qos, updated_at)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
             status = excluded.status,
-            total_cpus = excluded.total_cpus,
-            total_cpus_alloc = excluded.total_cpus_alloc,
-            total_cpus_idle = excluded.total_cpus_idle,
-            total_memory = excluded.total_memory,
-            total_memory_alloc = excluded.total_memory_alloc,
-            total_memory_free = excluded.total_memory_free,
+            access_qos = excluded.access_qos,
+            resource_qos = excluded.resource_qos,
             updated_at = excluded.updated_at
         "#,
         part.name,
         status,
-        part.total_cpus,
-        part.total_cpus_alloc,
-        part.total_cpus_idle,
-        part.total_memory,
-        part.total_memory_alloc,
-        part.total_memory_free,
+        part.access_qos,
+        part.resource_qos,
         part.updated_at
     )
     .execute(pool)

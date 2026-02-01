@@ -91,11 +91,12 @@ pub enum JobStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Job {
     pub job_id: JobId,
+    pub name: String,
     pub user: String,
     pub partition: String,
     pub status: JobStatus,
 
-    pub time_limit: Option<String>,
+    pub time_limit: Option<i64>, // in seconds
     pub start_time: Option<DateTime<Utc>>,
     pub submit_time: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -127,16 +128,10 @@ pub enum PartitionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Partition {
     pub name: String,
-
     pub status: PartitionStatus,
-
-    pub total_cpus: u32,
-    pub total_cpus_alloc: u32,
-    pub total_cpus_idle: u32,
-
-    pub total_memory: i64,
-    pub total_memory_alloc: i64,
-    pub total_memory_free: i64,
+    // The QoS governing this partition
+    pub access_qos: Option<String>,
+    pub resource_qos: Option<String>,
 
     pub updated_at: DateTime<Utc>,
 }

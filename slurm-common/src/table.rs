@@ -17,6 +17,14 @@ pub struct Table<V: Keyed> {
 }
 
 impl<V: Keyed> Table<V> {
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+    pub fn insert(&mut self, value: V) {
+        self.map.insert(V::clone_key(value.key()), value);
+    }
     pub fn diff(&self, other: &Table<V>) -> TableDiff<V, V::Key> {
         let mut added = Vec::new();
         let mut changed = Vec::new();

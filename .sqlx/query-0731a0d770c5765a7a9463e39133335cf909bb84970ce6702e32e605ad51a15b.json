@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM node_resources WHERE node = ? AND resource = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "0731a0d770c5765a7a9463e39133335cf909bb84970ce6702e32e605ad51a15b"
+}

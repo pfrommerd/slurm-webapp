@@ -30,26 +30,19 @@ CREATE TABLE IF NOT EXISTS node_resources (
 
 CREATE TABLE IF NOT EXISTS partitions (
     name TEXT PRIMARY KEY,
-
     status TEXT NOT NULL,
-
-    total_cpus INTEGER NOT NULL,
-    total_cpus_alloc INTEGER NOT NULL,
-    total_cpus_idle INTEGER NOT NULL,
-
-    total_memory INTEGER NOT NULL,
-    total_memory_alloc INTEGER NOT NULL,
-    total_memory_free INTEGER NOT NULL,
-
+    access_qos TEXT,
+    resource_qos TEXT,
     updated_at DATETIME NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS jobs (
     job_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
     user TEXT NOT NULL,
     partition TEXT NOT NULL,
     status TEXT NOT NULL,
-    time_limit TEXT,
+    time_limit INTEGER,
     start_time DATETIME,
     submit_time DATETIME NOT NULL,
     updated_at DATETIME NOT NULL

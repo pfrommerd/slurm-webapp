@@ -33,7 +33,24 @@ async fn main() -> Result<()> {
         let state = if args.mock {
             Ok(generate_mock_data())
         } else {
-            Err("Not implemented")
+            // Rewrite to use try blocks when that is stabilized.
+            (async || -> Result<ClusterState> {
+                let (nodes, node_resources, node_partitions) =
+                    slurm_common::scontrol::nodes().await?;
+                let partitions = slurm_common::scontrol::partitions().await?;
+                let (jobs, job_allocations, job_resources) = slurm_common::scontrol::jobs().await?;
+                Ok(ClusterState {
+                    nodes,
+                    partitions,
+                    jobs,
+                    node_resources,
+                    node_partitions,
+                    job_allocations,
+                    job_resources,
+                    updated_at: Some(Utc::now()),
+                })
+            })()
+            .await
         };
         match state {
             Ok(state) => {
@@ -56,23 +73,15 @@ fn generate_mock_data() -> ClusterState {
         Partition {
             name: "gpu".to_string(),
             status: PartitionStatus::Up,
-            total_cpus: 6400,
-            total_cpus_alloc: 0,
-            total_cpus_idle: 6400,
-            total_memory: 2560000,
-            total_memory_alloc: 0,
-            total_memory_free: 2560000,
+            access_qos: Some("normal".to_string()),
+            resource_qos: Some("normal".to_string()),
             updated_at,
         },
         Partition {
             name: "standard".to_string(),
             status: PartitionStatus::Up,
-            total_cpus: 12800,
-            total_cpus_alloc: 0,
-            total_cpus_idle: 12800,
-            total_memory: 5120000,
-            total_memory_alloc: 0,
-            total_memory_free: 5120000,
+            access_qos: Some("normal".to_string()),
+            resource_qos: Some("normal".to_string()),
             updated_at,
         },
     ];
@@ -150,10 +159,11 @@ fn generate_mock_data() -> ClusterState {
 
         jobs_vec.push(Job {
             job_id: job_id.clone(),
+            name: format!("job{}", job_id_val),
             user: format!("user{}", rng.gen_range(1..5)),
             partition: "gpu".to_string(),
             status,
-            time_limit: Some("12:00:00".to_string()),
+            time_limit: Some(43200),
             start_time: Some(Utc::now()),
             submit_time: Utc::now(),
             updated_at,

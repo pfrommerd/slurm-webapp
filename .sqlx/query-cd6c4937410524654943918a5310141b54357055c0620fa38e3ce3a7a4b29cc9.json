@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM node_partitions WHERE node = ? AND partition = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "cd6c4937410524654943918a5310141b54357055c0620fa38e3ce3a7a4b29cc9"
+}

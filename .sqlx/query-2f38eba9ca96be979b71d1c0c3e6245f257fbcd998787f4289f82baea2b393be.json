@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO node_partitions (node, partition)\n        VALUES (?, ?)\n        ON CONFLICT(node, partition) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "2f38eba9ca96be979b71d1c0c3e6245f257fbcd998787f4289f82baea2b393be"
+}
