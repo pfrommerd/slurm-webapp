@@ -121,7 +121,7 @@ async fn monitor_loop(child: &mut dyn Process, pool: Pool<Sqlite>) -> Result<()>
                                 info!("Updated cluster status.");
                             }
                         } else {
-                            error!("Failed to parse line as ClusterStatus: {}", line);
+                            error!("Failed to parse line as ClusterDiff: {}", line);
                         }
                     }
                     Ok(None) => {

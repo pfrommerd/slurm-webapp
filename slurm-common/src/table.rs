@@ -25,6 +25,15 @@ impl<V: Keyed> Table<V> {
     pub fn insert(&mut self, value: V) {
         self.map.insert(V::clone_key(value.key()), value);
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&V::Key, &V)> {
+        self.map.iter()
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.map.values()
+    }
+
     pub fn diff(&self, other: &Table<V>) -> TableDiff<V, V::Key> {
         let mut added = Vec::new();
         let mut changed = Vec::new();
@@ -88,7 +97,8 @@ where
     where
         S: serde::Serializer,
     {
-        self.map.serialize(serializer)
+        let values: Vec<V> = self.map.values().cloned().collect();
+        values.serialize(serializer)
     }
 }
 
@@ -101,8 +111,8 @@ where
     where
         D: serde::Deserializer<'de>,
     {
-        let map = HashMap::deserialize(deserializer)?;
-        Ok(Table { map })
+        let values: Vec<V> = Vec::deserialize(deserializer)?;
+        Ok(Table::from(values))
     }
 }
 

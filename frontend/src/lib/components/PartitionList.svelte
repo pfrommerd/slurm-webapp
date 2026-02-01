@@ -1,6 +1,6 @@
 <script lang="ts">
     import { PartitionStatus, type Partition } from "$lib/types";
-    import Table from "./ui/Table.svelte";
+    import TableUI from "./ui/Table.svelte";
     import TableHeader from "./ui/TableHeader.svelte";
     import TableBody from "./ui/TableBody.svelte";
     import TableRow from "./ui/TableRow.svelte";
@@ -10,9 +10,13 @@
 
     export let partitions: Partition[] = [];
 
+    $: sortedPartitions = [...partitions].sort((a, b) =>
+        a.name.localeCompare(b.name),
+    );
+
     function getStateVariant(state: PartitionStatus) {
-        if (state === PartitionStatus.UP) return "success";
-        if (state === PartitionStatus.DOWN) return "danger";
+        if (state === PartitionStatus.Up) return "success";
+        if (state === PartitionStatus.Down) return "danger";
         return "neutral";
     }
 </script>
@@ -20,17 +24,15 @@
 <div
     class="bg-white dark:bg-zinc-800 shadow rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700"
 >
-    <Table>
+    <TableUI>
         <TableHeader>
             <TableRow>
                 <TableHead>Partition</TableHead>
                 <TableHead>State</TableHead>
-                <TableHead>Total Nodes</TableHead>
-                <TableHead>Total CPUs</TableHead>
             </TableRow>
         </TableHeader>
         <TableBody>
-            {#each partitions as part}
+            {#each sortedPartitions as part}
                 <TableRow>
                     <TableCell
                         ><span
@@ -43,19 +45,17 @@
                             >{part.status}</Badge
                         >
                     </TableCell>
-                    <TableCell>{part.total_nodes}</TableCell>
-                    <TableCell>{part.total_cpus}</TableCell>
                 </TableRow>
             {/each}
-            {#if partitions.length === 0}
+            {#if sortedPartitions.length === 0}
                 <TableRow>
                     <td
-                        colspan="4"
+                        colspan="2"
                         class="px-6 py-4 text-center text-sm text-zinc-500 dark:text-zinc-400"
                         >No partitions found</td
                     >
                 </TableRow>
             {/if}
         </TableBody>
-    </Table>
+    </TableUI>
 </div>

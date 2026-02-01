@@ -1,10 +1,11 @@
 use anyhow::Result;
+use chrono::{NaiveDateTime, TimeZone, Utc};
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::{
-    table::Table, Job, JobAllocation, JobResource, Node, NodePartition, NodeResource, Partition,
-    PartitionStatus,
+    table::Table, Job, JobAllocation, JobResource, Node, NodeName, NodePartition, NodeResource,
+    Partition, PartitionStatus, ResourceType,
 };
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
@@ -205,10 +206,138 @@ pub async fn jobs() -> Result<(Table<Job>, Table<JobAllocation>, Table<JobResour
         .arg("--details")
         .output()
         .await?;
-    let output = String::from_utf8(output.stdout).unwrap();
-    let jobs: Vec<JobInfo> = crate::parser::from_str(&output).unwrap();
-    eprintln!("{:?}", jobs);
-    Ok((Table::new(), Table::new(), Table::new()))
+    let output = String::from_utf8(output.stdout)?;
+    let job_infos: Vec<JobInfo> = crate::parser::from_str(&output).unwrap_or_default();
+
+    let mut jobs = Table::new();
+    let mut allocations = Table::new();
+    let mut resources = Table::new();
+    let updated_at = Utc::now();
+
+    for info in job_infos {
+        let job_id = crate::JobId::new(info.job_id as i64);
+
+        // Status mapping
+        let status = match info.state {
+            JobStateInfo::Running => crate::JobStatus::Running,
+            JobStateInfo::Pending => crate::JobStatus::Pending,
+            JobStateInfo::Completed => crate::JobStatus::Completed,
+            JobStateInfo::Failed => crate::JobStatus::Failed,
+            JobStateInfo::Unknown => crate::JobStatus::Unknown,
+        };
+
+        // Parse user (remove uid part if present, e.g. "user(123)")
+        let user_str = info.user.split('(').next().unwrap_or(info.user);
+
+        let submit_time = parse_slurm_time(info.submit_time).unwrap_or(updated_at);
+        let start_time = info.start_time.and_then(parse_slurm_time);
+        let time_limit = info.time_limit.and_then(parse_slurm_duration);
+
+        jobs.insert(Job {
+            job_id: job_id.clone(),
+            name: info.name.to_string(),
+            user: user_str.to_string(),
+            partition: info.partition.to_string(),
+            status,
+            time_limit,
+            start_time,
+            submit_time,
+            updated_at,
+        });
+
+        // Resources
+        // We'll collect all resource keys from both ReqTRES and AllocTRES
+        let mut res_keys = HashSet::new();
+        if let Some(req) = &info.req_res {
+            for k in req.keys() {
+                res_keys.insert(k.to_string());
+            }
+        }
+        if let Some(alloc) = &info.alloc_res {
+            for k in alloc.keys() {
+                res_keys.insert(k.to_string());
+            }
+        }
+
+        for res_key in res_keys {
+            let requested = info
+                .req_res
+                .as_ref()
+                .and_then(|m| m.get(res_key.as_str()))
+                .map(|q| q.clone().into())
+                .unwrap_or(0);
+            let allocated = info
+                .alloc_res
+                .as_ref()
+                .and_then(|m| m.get(res_key.as_str()))
+                .map(|q| q.clone().into())
+                .unwrap_or(0);
+
+            if requested > 0 || allocated > 0 {
+                resources.insert(JobResource {
+                    job: job_id.clone(),
+                    resource: ResourceType::new(&res_key),
+                    requested,
+                    allocated,
+                });
+            }
+        }
+
+        // Job Allocation (only if single node for now)
+        if info.node_list.len() == 1 {
+            if let Some(alloc) = &info.alloc_res {
+                let node_name = NodeName::new(&info.node_list[0]);
+                for (res, qty) in alloc {
+                    allocations.insert(JobAllocation {
+                        job: job_id.clone(),
+                        node: node_name.clone(),
+                        resource: ResourceType::new(res),
+                        used: qty.clone().into(),
+                    });
+                }
+            }
+        }
+    }
+    Ok((jobs, allocations, resources))
+}
+
+fn parse_slurm_time(s: &str) -> Option<chrono::DateTime<Utc>> {
+    if s == "N/A" || s == "None" {
+        return None;
+    }
+    // format: 2026-01-31T12:44:31
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
+        .ok()
+        .map(|dt| Utc.from_utc_datetime(&dt))
+}
+
+fn parse_slurm_duration(s: &str) -> Option<i64> {
+    if s == "UNLIMITED" || s == "N/A" || s == "None" {
+        return None;
+    }
+    // Formats: MM:SS, HH:MM:SS, D-HH:MM:SS
+    let parts: Vec<&str> = s.split('-').collect();
+    let (days, time_part) = if parts.len() == 2 {
+        (parts[0].parse::<i64>().ok()?, parts[1])
+    } else {
+        (0, parts[0])
+    };
+
+    let time_split: Vec<&str> = time_part.split(':').collect();
+    let seconds = if time_split.len() == 3 {
+        let h: i64 = time_split[0].parse().ok()?;
+        let m: i64 = time_split[1].parse().ok()?;
+        let s: i64 = time_split[2].parse().ok()?;
+        h * 3600 + m * 60 + s
+    } else if time_split.len() == 2 {
+        let m: i64 = time_split[0].parse().ok()?;
+        let s: i64 = time_split[1].parse().ok()?;
+        m * 60 + s
+    } else {
+        return None;
+    };
+
+    Some(days * 24 * 3600 + seconds)
 }
 
 // Will handle parsing memory M and G suffixes

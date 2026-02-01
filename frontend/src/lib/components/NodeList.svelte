@@ -1,6 +1,6 @@
 <script lang="ts">
     import { type Node, NodeStatus } from "$lib/types";
-    import Table from "./ui/Table.svelte";
+    import TableUI from "./ui/Table.svelte";
     import TableHeader from "./ui/TableHeader.svelte";
     import TableBody from "./ui/TableBody.svelte";
     import TableRow from "./ui/TableRow.svelte";
@@ -10,10 +10,12 @@
 
     export let nodes: Node[] = [];
 
+    $: sortedNodes = [...nodes].sort((a, b) => a.name.localeCompare(b.name));
+
     function getStateVariant(state: NodeStatus) {
-        if (state === NodeStatus.IDLE) return "success";
-        if (state === NodeStatus.DOWN) return "danger";
-        if (state === NodeStatus.MIX) return "warning";
+        if (state === NodeStatus.Idle) return "success";
+        if (state === NodeStatus.Down) return "danger";
+        if (state === NodeStatus.Mix) return "warning";
         return "neutral";
     }
 </script>
@@ -21,7 +23,7 @@
 <div
     class="bg-white dark:bg-zinc-800 shadow rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700"
 >
-    <Table>
+    <TableUI>
         <TableHeader>
             <TableRow>
                 <TableHead>Node Name</TableHead>
@@ -32,7 +34,7 @@
             </TableRow>
         </TableHeader>
         <TableBody>
-            {#each nodes as node}
+            {#each sortedNodes as node}
                 <TableRow>
                     <TableCell
                         ><span
@@ -46,13 +48,13 @@
                         >
                     </TableCell>
                     <TableCell>{node.cpus}</TableCell>
-                    <TableCell>{node.real_memory} MB</TableCell>
+                    <TableCell>{node.memory} MB</TableCell>
                     <TableCell>
-                        {#if Object.keys(node.resources).length > 0}
+                        {#if node.resources.size > 0}
                             <div class="flex flex-wrap gap-1">
-                                {#each Object.entries(node.resources) as [key, res]}
+                                {#each [...node.resources.values()] as res}
                                     <Badge variant="neutral" size="sm">
-                                        {res.res_id}: {res.allocated}/{res.total}
+                                        {res.resource}: {res.available}/{res.total}
                                     </Badge>
                                 {/each}
                             </div>
@@ -62,7 +64,7 @@
                     </TableCell>
                 </TableRow>
             {/each}
-            {#if nodes.length === 0}
+            {#if sortedNodes.length === 0}
                 <TableRow>
                     <td
                         colspan="5"
@@ -72,5 +74,5 @@
                 </TableRow>
             {/if}
         </TableBody>
-    </Table>
+    </TableUI>
 </div>

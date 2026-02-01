@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use axum::{extract::State, routing::get, Json, Router};
 use env_logger::Env;
 use log::info;
-use slurm_common::{db, ClusterState, Job, Node, Partition};
+use slurm_common::{db, ClusterState};
 
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::net::SocketAddr;
@@ -34,10 +34,7 @@ async fn main() -> Result<()> {
     let state = AppState { pool };
 
     let app = Router::new()
-        .route("/api/status", get(get_status))
-        .route("/api/nodes", get(get_nodes))
-        .route("/api/jobs", get(get_jobs))
-        .route("/api/partitions", get(get_partitions))
+        .route("/api/state", get(get_state))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -50,28 +47,9 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn get_status(State(state): State<AppState>) -> Json<ClusterState> {
-    let status = db::fetch_cluster_state(&state.pool)
+async fn get_state(State(state): State<AppState>) -> Json<ClusterState> {
+    let raw_state = db::fetch_cluster_state(&state.pool)
         .await
         .unwrap_or_default();
-    Json(status)
+    Json(raw_state)
 }
-
-async fn get_nodes(State(state): State<AppState>) -> Json<Vec<Node>> {
-    let nodes = db::fetch_all_nodes(&state.pool).await.unwrap_or(vec![]);
-    Json(nodes)
-}
-
-async fn get_jobs(State(state): State<AppState>) -> Json<Vec<Job>> {
-    let jobs = db::fetch_all_jobs(&state.pool).await.unwrap_or(vec![]);
-    Json(jobs)
-}
-
-async fn get_partitions(State(state): State<AppState>) -> Json<Vec<Partition>> {
-    let parts = db::fetch_all_partitions(&state.pool)
-        .await
-        .unwrap_or(vec![]);
-    Json(parts)
-}
-
-// Helpers removed as they are now in slurm-common

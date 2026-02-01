@@ -18,3 +18,5 @@ env_logger = "0.11"
 chrono = "0.4.43"
 clap = { version = "4.5.56", features = ["derive"] }
 dotenv = "0.15.0"
+async-graphql = "7.2.1"
+async-graphql-axum = "7.2.1"

@@ -12,7 +12,13 @@ use table::{Keyed, Table};
 use crate::table::TableDiff;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ResourceType(String);
+pub struct ResourceType(pub String);
+
+impl AsRef<str> for ResourceType {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
 
 impl ResourceType {
     pub fn new(s: &str) -> Self {
@@ -21,7 +27,13 @@ impl ResourceType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct NodeName(String);
+pub struct NodeName(pub String);
+
+impl AsRef<str> for NodeName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
 
 impl NodeName {
     pub fn new(s: &str) -> Self {
@@ -30,7 +42,7 @@ impl NodeName {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct JobId(i64);
+pub struct JobId(pub i64);
 
 impl JobId {
     pub fn new(i: i64) -> Self {
