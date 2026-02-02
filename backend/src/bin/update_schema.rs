@@ -1,14 +1,13 @@
-use async_graphql::EmptyMutation;
-use async_graphql::EmptySubscription;
-use async_graphql::Schema;
-
-use backend::api::Query;
+use async_graphql::SDLExportOptions;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
 #[tokio::main]
 async fn main() {
-    let schema = Schema::new(Query, EmptyMutation, EmptySubscription);
-    let mut file = File::create("frontend/src/lib/api.graphql").await.unwrap();
-    file.write_all(schema.sdl().as_bytes()).await.unwrap();
+    let schema = backend::api::schema();
+    let opts = SDLExportOptions::default();
+    let mut file = File::create("frontend/schema.graphql").await.unwrap();
+    file.write_all(schema.sdl_with_options(opts).as_bytes())
+        .await
+        .unwrap();
 }

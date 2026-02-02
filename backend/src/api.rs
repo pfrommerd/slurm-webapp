@@ -9,3 +9,7 @@ impl Query {
         a + b
     }
 }
+
+pub fn schema() -> Schema<Query, EmptyMutation, EmptySubscription> {
+    Schema::build(Query, EmptyMutation, EmptySubscription).finish()
+}
