@@ -6,10 +6,13 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarContent,
+  SidebarFooter,
 } from "@/components/ui/sidebar"
-import { IconDatabase, IconDashboard, IconInfoHexagon, IconStack2 } from "@tabler/icons-vue"
+import { IconDatabase, IconDashboard, IconStack2, IconInfoCircle, IconCloudComputing, IconCircleHalf } from "@tabler/icons-vue"
 import NavItem from "@/components/NavItem.vue"
 import NavGroup from "@/components/NavGroup.vue"
+import Separator from "@/components/ui/separator/Separator.vue";
+import NavUser from "@/components/NavUser.vue";
 </script>
 
 <template>
@@ -32,11 +35,21 @@ import NavGroup from "@/components/NavGroup.vue"
         <NavGroup label="Home">
             <NavItem name="Dashboard" url="/" :icon="IconDashboard" />
             <NavItem name="Jobs" url="/jobs" :icon="IconStack2" />
-            <NavItem name="About" url="/about" :icon="IconInfoHexagon" />
+            <NavItem name="Nodes" url="/nodes" :icon="IconCloudComputing" />
+            <NavItem name="Partitions" url="/partitions" :icon="IconCircleHalf" />
+            <NavItem name="About" url="/about" :icon="IconInfoCircle" />
+        </NavGroup>
+        <div class="flex justify-center mx-3">
+        <Separator class="data-[orientation=horizontal]"/>
+        </div>
+        <NavGroup label="Recents">
+            <NavItem name="job 12345" url="/job/12345" :icon="IconStack2" />
+            <NavItem name="job 12346" url="/job/12346" :icon="IconStack2" />
+            <NavItem name="node1232" url="/node/1232" :icon="IconCloudComputing" />
         </NavGroup>
       </SidebarContent>
-      <!-- <SidebarFooter>
-        <NavUser :user="data.user" />
-      </SidebarFooter> -->
+      <SidebarFooter>
+        <NavUser/>
+      </SidebarFooter>
     </Sidebar>
 </template>

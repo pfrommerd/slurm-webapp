@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { Badge } from '@/components/ui/badge'
 </script>
 
 <template>
@@ -17,7 +18,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar'
       <div class="ml-1"></div>
       <router-view name="nav" />
       <div class="flex items-center gap-2 ml-auto"></div>
-      <Button variant="ghost">Connected</Button>
+      <Badge variant="outline" class="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">Connected</Badge>
     </div>
   </header>
 </template>

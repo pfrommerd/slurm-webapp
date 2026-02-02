@@ -34,9 +34,11 @@ interface User {
   avatar: string
 }
 
-defineProps<{
-  user: User
-}>()
+const user = {
+  name: "ClusterNode",
+  email: "clusternode@clusternode.com",
+  avatar: "https://github.com/clusternode.png",
+}
 
 const { isMobile } = useSidebar()
 </script>

@@ -50,11 +50,12 @@ function selectOption(selectedValue: string) {
           <span v-if="prefix" class="text-muted-foreground mr-1">{{ prefix }}:</span>
           {{ selectedOption?.label || placeholder }}
         </span>
+        <ChevronsUpDownIcon class="opacity-50" />
       </Button>
     </PopoverTrigger>
     <PopoverContent class="min-w-50 p-0">
       <Command :highlight-on-hover="true">
-        <CommandInput class="h-9" placeholder="Search..." />
+        <CommandInput class="h-9" placeholder="Search framework..." />
         <CommandList>
           <CommandEmpty>No framework found.</CommandEmpty>
           <CommandGroup>

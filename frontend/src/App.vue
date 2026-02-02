@@ -5,15 +5,15 @@ import {
 } from "@/components/ui/sidebar"
 import AppSidebar from "@/AppSidebar.vue"
 import AppHeader from "@/AppHeader.vue"
-
 </script>
 
 <template>
-  <SidebarProvider
-    :style=" {
+  <div :style=" {
       '--sidebar-width': 'calc(var(--spacing) * 72)',
       '--header-height': 'calc(var(--spacing) * 12)',
-    }"
+    }">
+  <RouterView v-if="$route.meta.fullpage" />
+  <SidebarProvider v-else
   >
     <AppSidebar />
     <SidebarInset>
@@ -21,4 +21,5 @@ import AppHeader from "@/AppHeader.vue"
       <RouterView />
     </SidebarInset>
   </SidebarProvider>
+  </div>
 </template>
