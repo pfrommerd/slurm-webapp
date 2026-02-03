@@ -3,19 +3,17 @@ name = "slurm-common"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-db = ["sqlx"]
-
 [dependencies]
 tokio = { version = "1.49.0", features = ["process"] }
 serde = { version = "1.0", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio", "macros", "chrono"], optional = true }
 
 anyhow = "1.0"
 serde_json = "1.0"
 regex = "1.12.2"
 paste = "1.0.15"
+async-graphql = { version = "7.2.1", features = ["chrono", "uuid"] }
+uuid = { version = "1.20.0", features = ["serde", "v7"] }
 
 
 

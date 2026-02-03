@@ -1,11 +1,11 @@
 use anyhow::Result;
 use chrono::{NaiveDateTime, TimeZone, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
+use crate::table::{Table, TableDiff};
 use crate::{
-    table::Table, Job, JobAllocation, JobResource, Node, NodeName, NodePartition, NodeResource,
-    Partition, PartitionStatus, ResourceType,
+    Job, JobAllocation, JobResource, Node, NodeName, Partition, PartitionStatus, ResourceType,
 };
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
@@ -103,7 +103,46 @@ pub struct JobInfo<'src> {
     pub time_limit: Option<&'src str>,
 }
 
-pub async fn nodes() -> Result<(Table<Node>, Table<NodeResource>, Table<NodePartition>)> {
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ClusterState {
+    pub nodes: Table<Node>,
+    pub partitions: Table<Partition>,
+    pub jobs: Table<Job>,
+}
+
+impl ClusterState {
+    pub fn apply(&mut self, diff: ClusterDiff) {
+        self.nodes.apply(diff.nodes);
+        self.partitions.apply(diff.partitions);
+        self.jobs.apply(diff.jobs);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ClusterDiff {
+    pub nodes: TableDiff<Node>,
+    pub partitions: TableDiff<Partition>,
+    pub jobs: TableDiff<Job>,
+}
+
+pub async fn state(current: &ClusterState) -> Result<ClusterDiff> {
+    // gather all and await all
+    let (nodes, partitions, jobs) = tokio::join!(
+        nodes(&current.nodes),
+        partitions(&current.partitions),
+        jobs(&current.jobs)
+    );
+    let nodes = nodes?;
+    let partitions = partitions?;
+    let jobs = jobs?;
+    Ok(ClusterDiff {
+        nodes,
+        partitions,
+        jobs,
+    })
+}
+
+pub async fn nodes(current: &Table<Node>) -> Result<TableDiff<Node>> {
     let output = tokio::process::Command::new("scontrol")
         .arg("show")
         .arg("nodes")
@@ -111,67 +150,10 @@ pub async fn nodes() -> Result<(Table<Node>, Table<NodeResource>, Table<NodePart
         .await?;
     let output = String::from_utf8(output.stdout)?;
     let node_infos: Vec<NodeInfo> = crate::parser::from_str(&output).unwrap_or_default();
-
-    let mut nodes = Table::new();
-    let mut resources = Table::new();
-    let mut partitions = Table::new();
-    let updated_at = chrono::Utc::now();
-
-    for info in node_infos {
-        let name = crate::NodeName(info.name.to_string());
-
-        // Map scontrol state to our NodeStatus
-        let status = match info.state {
-            NodeStateInfo::Idle => crate::NodeStatus::Idle,
-            NodeStateInfo::Allocated => crate::NodeStatus::Alloc,
-            NodeStateInfo::Mix => crate::NodeStatus::Mix,
-            NodeStateInfo::Down => crate::NodeStatus::Down,
-            NodeStateInfo::Unknown => crate::NodeStatus::Unknown,
-        };
-
-        // Node
-        nodes.insert(Node {
-            name: name.clone(),
-            status,
-            cpus: info.cpus,
-            cpus_alloc: info.cpu_alloc,
-            cpus_idle: info.cpus.saturating_sub(info.cpu_alloc),
-            memory: info.real_memory as i64,
-            memory_alloc: info.alloc_mem as i64,
-            memory_free: info.free_mem.unwrap_or(0) as i64,
-            partitions: info.partitions.iter().map(|s| s.to_string()).collect(),
-            updated_at,
-        });
-
-        // Node Partitions
-        for part_name in info.partitions {
-            partitions.insert(NodePartition {
-                node: name.clone(),
-                partition: part_name.to_string(),
-            });
-        }
-
-        // Node Resources (CfgTRES vs AllocTRES)
-        // We'll iterate over CfgTRES for 'total' and compare with AllocTRES for 'available'
-        // But AllocTRES only shows allocated. Available = Total - Allocated.
-        for (res_name, total_qty) in info.resources {
-            let total = total_qty.0 as u64;
-            let allocated = info.allocated.get(res_name).map(|q| q.0).unwrap_or(0);
-            let available = total.saturating_sub(allocated as u64);
-
-            resources.insert(NodeResource {
-                node: name.clone(),
-                resource: crate::ResourceType(res_name.to_string()),
-                total,
-                available,
-            });
-        }
-    }
-
-    Ok((nodes, resources, partitions))
+    todo!()
 }
 
-pub async fn partitions() -> Result<Table<Partition>> {
+pub async fn partitions(current: &Table<Partition>) -> Result<TableDiff<Partition>> {
     let output = tokio::process::Command::new("scontrol")
         .arg("show")
         .arg("partitions")
@@ -179,27 +161,10 @@ pub async fn partitions() -> Result<Table<Partition>> {
         .await?;
     let output = String::from_utf8(output.stdout).unwrap();
     let partitions: Vec<PartitionInfo> = crate::parser::from_str(&output).unwrap();
-    let mut table = Table::new();
-    for info in partitions {
-        let status = match info.state {
-            NodeStateInfo::Idle => PartitionStatus::Up,
-            NodeStateInfo::Allocated => PartitionStatus::Up,
-            NodeStateInfo::Mix => PartitionStatus::Up,
-            NodeStateInfo::Down => PartitionStatus::Down,
-            NodeStateInfo::Unknown => PartitionStatus::Down,
-        };
-        table.insert(Partition {
-            name: info.name.to_string(),
-            status,
-            access_qos: info.allow_qos.map(|s| s.to_string()),
-            resource_qos: info.qos.map(|s| s.to_string()),
-            updated_at: chrono::Utc::now(),
-        });
-    }
-    Ok(table)
+    todo!()
 }
 
-pub async fn jobs() -> Result<(Table<Job>, Table<JobAllocation>, Table<JobResource>)> {
+pub async fn jobs(current: &Table<Job>) -> Result<TableDiff<Job>> {
     let output = tokio::process::Command::new("scontrol")
         .arg("show")
         .arg("jobs")
@@ -208,97 +173,7 @@ pub async fn jobs() -> Result<(Table<Job>, Table<JobAllocation>, Table<JobResour
         .await?;
     let output = String::from_utf8(output.stdout)?;
     let job_infos: Vec<JobInfo> = crate::parser::from_str(&output).unwrap_or_default();
-
-    let mut jobs = Table::new();
-    let mut allocations = Table::new();
-    let mut resources = Table::new();
-    let updated_at = Utc::now();
-
-    for info in job_infos {
-        let job_id = crate::JobId::new(info.job_id as i64);
-
-        // Status mapping
-        let status = match info.state {
-            JobStateInfo::Running => crate::JobStatus::Running,
-            JobStateInfo::Pending => crate::JobStatus::Pending,
-            JobStateInfo::Completed => crate::JobStatus::Completed,
-            JobStateInfo::Failed => crate::JobStatus::Failed,
-            JobStateInfo::Unknown => crate::JobStatus::Unknown,
-        };
-
-        // Parse user (remove uid part if present, e.g. "user(123)")
-        let user_str = info.user.split('(').next().unwrap_or(info.user);
-
-        let submit_time = parse_slurm_time(info.submit_time).unwrap_or(updated_at);
-        let start_time = info.start_time.and_then(parse_slurm_time);
-        let time_limit = info.time_limit.and_then(parse_slurm_duration);
-
-        jobs.insert(Job {
-            job_id: job_id.clone(),
-            name: info.name.to_string(),
-            user: user_str.to_string(),
-            partition: info.partition.to_string(),
-            status,
-            time_limit,
-            start_time,
-            submit_time,
-            updated_at,
-        });
-
-        // Resources
-        // We'll collect all resource keys from both ReqTRES and AllocTRES
-        let mut res_keys = HashSet::new();
-        if let Some(req) = &info.req_res {
-            for k in req.keys() {
-                res_keys.insert(k.to_string());
-            }
-        }
-        if let Some(alloc) = &info.alloc_res {
-            for k in alloc.keys() {
-                res_keys.insert(k.to_string());
-            }
-        }
-
-        for res_key in res_keys {
-            let requested = info
-                .req_res
-                .as_ref()
-                .and_then(|m| m.get(res_key.as_str()))
-                .map(|q| q.clone().into())
-                .unwrap_or(0);
-            let allocated = info
-                .alloc_res
-                .as_ref()
-                .and_then(|m| m.get(res_key.as_str()))
-                .map(|q| q.clone().into())
-                .unwrap_or(0);
-
-            if requested > 0 || allocated > 0 {
-                resources.insert(JobResource {
-                    job: job_id.clone(),
-                    resource: ResourceType::new(&res_key),
-                    requested,
-                    allocated,
-                });
-            }
-        }
-
-        // Job Allocation (only if single node for now)
-        if info.node_list.len() == 1 {
-            if let Some(alloc) = &info.alloc_res {
-                let node_name = NodeName::new(&info.node_list[0]);
-                for (res, qty) in alloc {
-                    allocations.insert(JobAllocation {
-                        job: job_id.clone(),
-                        node: node_name.clone(),
-                        resource: ResourceType::new(res),
-                        used: qty.clone().into(),
-                    });
-                }
-            }
-        }
-    }
-    Ok((jobs, allocations, resources))
+    todo!()
 }
 
 fn parse_slurm_time(s: &str) -> Option<chrono::DateTime<Utc>> {

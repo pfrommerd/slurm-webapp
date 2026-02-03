@@ -4,7 +4,7 @@ use clap::Parser;
 use env_logger::Env;
 use log::{debug, error, info, warn};
 use serde::Deserialize;
-use slurm_common::{ClusterDiff, ClusterState};
+use slurm_common::scontrol::{ClusterDiff, ClusterState};
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -113,13 +113,7 @@ async fn monitor_loop(child: &mut dyn Process, pool: Pool<Sqlite>) -> Result<()>
                             debug!("Received diff: {:#?}", diff);
                             // Apply in-memory
                             status.apply(diff.clone());
-
-                            // Apply to DB
-                            if let Err(e) = slurm_common::db::apply_diff(&pool, diff).await {
-                                error!("Error applying diff: {}", e);
-                            } else {
-                                info!("Updated cluster status.");
-                            }
+                            // Use mutation to update DB
                         } else {
                             error!("Failed to parse line as ClusterDiff: {}", line);
                         }

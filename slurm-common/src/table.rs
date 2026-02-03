@@ -1,32 +1,45 @@
+use crate::{Job, Node, Partition};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use uuid::Uuid;
 
-pub trait Keyed: Clone {
-    type Key: std::hash::Hash + Eq + Clone;
-    type KeyRef<'s>: std::hash::Hash + Eq
-    where
-        Self: 's;
-
-    fn key<'s>(&'s self) -> Self::KeyRef<'s>;
-    fn clone_key(r: Self::KeyRef<'_>) -> Self::Key;
+pub trait HasId {
+    fn id(&self) -> Uuid;
 }
 
-#[derive(Debug, Clone)]
-pub struct Table<V: Keyed> {
-    map: HashMap<V::Key, V>,
+impl HasId for Node {
+    fn id(&self) -> Uuid {
+        self.id
+    }
+}
+impl HasId for Partition {
+    fn id(&self) -> Uuid {
+        self.id
+    }
 }
 
-impl<V: Keyed> Table<V> {
+impl HasId for Job {
+    fn id(&self) -> Uuid {
+        self.id
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Table<V: HasId> {
+    map: HashMap<Uuid, V>,
+}
+
+impl<V: HasId + Clone> Table<V> {
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
         }
     }
     pub fn insert(&mut self, value: V) {
-        self.map.insert(V::clone_key(value.key()), value);
+        self.map.insert(value.id(), value);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&V::Key, &V)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Uuid, &V)> {
         self.map.iter()
     }
 
@@ -34,7 +47,7 @@ impl<V: Keyed> Table<V> {
         self.map.values()
     }
 
-    pub fn diff(&self, other: &Table<V>) -> TableDiff<V, V::Key> {
+    pub fn diff(&self, other: &Table<V>) -> TableDiff<V> {
         let mut added = Vec::new();
         let mut changed = Vec::new();
         let mut removed = Vec::new();
@@ -57,12 +70,12 @@ impl<V: Keyed> Table<V> {
         }
     }
 
-    pub fn apply(&mut self, diff: TableDiff<V, V::Key>) {
+    pub fn apply(&mut self, diff: TableDiff<V>) {
         for value in diff.added {
-            self.map.insert(V::clone_key(value.key()), value);
+            self.map.insert(value.id(), value);
         }
         for value in diff.changed {
-            self.map.insert(V::clone_key(value.key()), value);
+            self.map.insert(value.id(), value);
         }
         for key in diff.removed {
             self.map.remove(&key);
@@ -70,17 +83,17 @@ impl<V: Keyed> Table<V> {
     }
 }
 
-impl<V: Keyed> From<Vec<V>> for Table<V> {
+impl<V: HasId> From<Vec<V>> for Table<V> {
     fn from(items: Vec<V>) -> Self {
         let mut map = HashMap::new();
         for item in items {
-            map.insert(V::clone_key(item.key()), item);
+            map.insert(item.id(), item);
         }
         Self { map }
     }
 }
 
-impl<V: Keyed> Default for Table<V> {
+impl<V: HasId> Default for Table<V> {
     fn default() -> Self {
         Self {
             map: HashMap::new(),
@@ -88,24 +101,22 @@ impl<V: Keyed> Default for Table<V> {
     }
 }
 
-impl<V: Keyed> Serialize for Table<V>
+impl<V: HasId> Serialize for Table<V>
 where
     V: Serialize,
-    V::Key: Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let values: Vec<V> = self.map.values().cloned().collect();
+        let values: Vec<&V> = self.map.values().collect();
         values.serialize(serializer)
     }
 }
 
-impl<'de, V: Keyed> Deserialize<'de> for Table<V>
+impl<'de, V: HasId> Deserialize<'de> for Table<V>
 where
     V: Deserialize<'de>,
-    V::Key: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -116,9 +127,9 @@ where
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TableDiff<V, K> {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TableDiff<V> {
     pub added: Vec<V>,
     pub changed: Vec<V>,
-    pub removed: Vec<K>,
+    pub removed: Vec<Uuid>,
 }

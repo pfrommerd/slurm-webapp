@@ -5,12 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { IconDatabase } from '@tabler/icons-vue';
 import { Separator } from '@/components/ui/separator';
-import { useRoute } from 'vue-router';
-import { computed } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { computed, ref } from 'vue';
 
 const route = useRoute();
 const isLogin = computed(() => route.path === '/login');
 const isSignup = computed(() => route.path === '/signup');
+
+const email = ref('');
+const password = ref('');
+
 </script>
 
 <template>
@@ -50,6 +54,7 @@ const isSignup = computed(() => route.path === '/signup');
                     type="email"
                     placeholder="m@example.com"
                     required
+                    v-model="email"
                 />
                 </Field>
                 <Field>
@@ -64,7 +69,7 @@ const isSignup = computed(() => route.path === '/signup');
                     Forgot your password?
                     </a>
                 </div>
-                <Input id="password" type="password" required />
+                <Input id="password" type="password" required v-model="password" />
                 </Field>
                 <Field>
                 <Button type="submit">

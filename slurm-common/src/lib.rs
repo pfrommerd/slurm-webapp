@@ -1,97 +1,31 @@
+use async_graphql::{Enum, NewType, Object, SimpleObject};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-#[cfg(feature = "db")]
-pub mod db;
 pub mod parser;
 pub mod scontrol;
 pub mod table;
 
-use table::{Keyed, Table};
-
-use crate::table::TableDiff;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, NewType)]
 pub struct ResourceType(pub String);
 
-impl AsRef<str> for ResourceType {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, NewType)]
+pub struct ClusterJobId(pub i64);
 
-impl ResourceType {
-    pub fn new(s: &str) -> Self {
-        Self(s.to_string())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, NewType)]
 pub struct NodeName(pub String);
 
+#[rustfmt::skip]
+impl AsRef<str> for ResourceType {
+    fn as_ref(&self) -> &str { &self.0 }
+}
+#[rustfmt::skip]
 impl AsRef<str> for NodeName {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
+    fn as_ref(&self) -> &str { &self.0 }
 }
 
-impl NodeName {
-    pub fn new(s: &str) -> Self {
-        Self(s.to_string())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct JobId(pub i64);
-
-impl JobId {
-    pub fn new(i: i64) -> Self {
-        Self(i)
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum NodeStatus {
-    Idle,
-    Alloc,
-    Mix,
-    Down,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Node {
-    pub name: NodeName,
-    pub status: NodeStatus,
-    // CPU stats
-    pub cpus: u32,
-    pub cpus_alloc: u32,
-    pub cpus_idle: u32,
-    // Memory stats
-    pub memory: i64,
-    pub memory_alloc: i64,
-    pub memory_free: i64,
-    // Partitions this node belongs to
-    pub partitions: Vec<String>,
-
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct NodeResource {
-    pub node: NodeName,
-    pub resource: ResourceType,
-    pub available: u64,
-    pub total: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct NodePartition {
-    pub node: NodeName,
-    pub partition: String,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Enum, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum JobStatus {
     Pending,
     Running,
@@ -100,9 +34,27 @@ pub enum JobStatus {
     Cancelled,
     Unknown,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+
+#[derive(Enum, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum NodeStatus {
+    Idle,
+    Alloc,
+    Mix,
+    Down,
+    Unknown,
+}
+
+#[derive(Enum, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PartitionStatus {
+    Up,
+    Down,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Job {
-    pub job_id: JobId,
+    pub id: Uuid,
+    pub job_id: ClusterJobId,
     pub name: String,
     pub user: String,
     pub partition: String,
@@ -112,33 +64,77 @@ pub struct Job {
     pub start_time: Option<DateTime<Utc>>,
     pub submit_time: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+
+    pub resources: Vec<JobResource>,
+    pub allocations: Vec<JobAllocation>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(SimpleObject, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct JobResource {
-    pub job: JobId,
     pub resource: ResourceType,
     pub requested: i64,
     pub allocated: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(SimpleObject, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct JobAllocation {
-    pub job: JobId,
-    pub node: NodeName,
+    pub node: NodeRef,
     pub resource: ResourceType,
     pub used: i64,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum PartitionStatus {
-    Up,
-    Down,
-    Unknown,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum JobRef {
+    Id(Uuid),
+    Job(Job),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[Object(name = "Job")]
+impl JobRef {
+    async fn id(&self) -> &Uuid {
+        match self {
+            JobRef::Id(id) => id,
+            JobRef::Job(job) => &job.id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Node {
+    pub id: Uuid,
+    pub name: NodeName,
+    pub status: NodeStatus,
+    pub partitions: Vec<PartitionRef>,
+    pub resources: Vec<ResourceAvailability>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(SimpleObject, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResourceAvailability {
+    pub resource: ResourceType,
+    pub available: u64,
+    pub total: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum NodeRef {
+    Id(Uuid),
+    Node(Node),
+}
+
+#[Object(name = "Node")]
+impl NodeRef {
+    async fn id(&self) -> &Uuid {
+        match self {
+            NodeRef::Id(id) => id,
+            NodeRef::Node(node) => &node.id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Partition {
+    pub id: Uuid,
     pub name: String,
     pub status: PartitionStatus,
     // The QoS governing this partition
@@ -148,160 +144,18 @@ pub struct Partition {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct ClusterState {
-    pub partitions: Table<Partition>,
-    pub nodes: Table<Node>,
-    pub jobs: Table<Job>,
-    pub node_resources: Table<NodeResource>,
-    pub node_partitions: Table<NodePartition>,
-    pub job_resources: Table<JobResource>,
-    pub job_allocations: Table<JobAllocation>,
-    // The time this state was last refreshed
-    pub updated_at: Option<DateTime<Utc>>,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PartitionRef {
+    Id(Uuid),
+    Partition(Partition),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClusterDiff {
-    pub partitions: TableDiff<Partition, String>,
-    pub nodes: TableDiff<Node, NodeName>,
-    pub jobs: TableDiff<Job, JobId>,
-    pub node_resources: TableDiff<NodeResource, (NodeName, ResourceType)>,
-    pub node_partitions: TableDiff<NodePartition, (NodeName, String)>,
-    pub job_resources: TableDiff<JobResource, (JobId, ResourceType)>,
-    pub job_allocations: TableDiff<JobAllocation, (JobId, NodeName, ResourceType)>,
-    pub updated_at: Option<DateTime<Utc>>,
-}
-
-impl ClusterState {
-    pub fn diff(&self, other: &ClusterState) -> ClusterDiff {
-        ClusterDiff {
-            partitions: self.partitions.diff(&other.partitions),
-            nodes: self.nodes.diff(&other.nodes),
-            jobs: self.jobs.diff(&other.jobs),
-            node_resources: self.node_resources.diff(&other.node_resources),
-            node_partitions: self.node_partitions.diff(&other.node_partitions),
-            job_resources: self.job_resources.diff(&other.job_resources),
-            job_allocations: self.job_allocations.diff(&other.job_allocations),
-            updated_at: other.updated_at,
+#[Object(name = "Partition")]
+impl PartitionRef {
+    async fn id(&self) -> &Uuid {
+        match self {
+            PartitionRef::Id(id) => id,
+            PartitionRef::Partition(partition) => &partition.id,
         }
-    }
-
-    pub fn apply(&mut self, diff: ClusterDiff) {
-        self.updated_at = diff.updated_at;
-    }
-}
-
-// Implement the Keyed trait for the different types
-
-impl Keyed for Partition {
-    type Key = String;
-    type KeyRef<'s>
-        = &'s str
-    where
-        Self: 's;
-
-    fn key(&self) -> Self::KeyRef<'_> {
-        &self.name
-    }
-
-    fn clone_key(r: Self::KeyRef<'_>) -> Self::Key {
-        r.to_string()
-    }
-}
-
-impl Keyed for Node {
-    type Key = NodeName;
-    type KeyRef<'s>
-        = &'s NodeName
-    where
-        Self: 's;
-
-    fn key(&self) -> Self::KeyRef<'_> {
-        &self.name
-    }
-
-    fn clone_key(r: Self::KeyRef<'_>) -> Self::Key {
-        r.clone()
-    }
-}
-
-impl Keyed for NodeResource {
-    type Key = (NodeName, ResourceType);
-    type KeyRef<'s>
-        = (&'s NodeName, &'s ResourceType)
-    where
-        Self: 's;
-
-    fn key(&self) -> Self::KeyRef<'_> {
-        (&self.node, &self.resource)
-    }
-
-    fn clone_key(r: Self::KeyRef<'_>) -> Self::Key {
-        (r.0.clone(), r.1.clone())
-    }
-}
-
-impl Keyed for NodePartition {
-    type Key = (NodeName, String);
-    type KeyRef<'s>
-        = (&'s NodeName, &'s str)
-    where
-        Self: 's;
-
-    fn key(&self) -> Self::KeyRef<'_> {
-        (&self.node, &self.partition)
-    }
-
-    fn clone_key(r: Self::KeyRef<'_>) -> Self::Key {
-        (r.0.clone(), r.1.to_string())
-    }
-}
-
-impl Keyed for Job {
-    type Key = JobId;
-    type KeyRef<'s>
-        = &'s JobId
-    where
-        Self: 's;
-
-    fn key(&self) -> Self::KeyRef<'_> {
-        &self.job_id
-    }
-
-    fn clone_key(r: Self::KeyRef<'_>) -> Self::Key {
-        r.clone()
-    }
-}
-
-impl Keyed for JobResource {
-    type Key = (JobId, ResourceType);
-    type KeyRef<'s>
-        = (&'s JobId, &'s ResourceType)
-    where
-        Self: 's;
-
-    fn key(&self) -> Self::KeyRef<'_> {
-        (&self.job, &self.resource)
-    }
-
-    fn clone_key(r: Self::KeyRef<'_>) -> Self::Key {
-        (r.0.clone(), r.1.clone())
-    }
-}
-
-impl Keyed for JobAllocation {
-    type Key = (JobId, NodeName, ResourceType);
-    type KeyRef<'s>
-        = (&'s JobId, &'s NodeName, &'s ResourceType)
-    where
-        Self: 's;
-
-    fn key(&self) -> Self::KeyRef<'_> {
-        (&self.job, &self.node, &self.resource)
-    }
-
-    fn clone_key(r: Self::KeyRef<'_>) -> Self::Key {
-        (r.0.clone(), r.1.clone(), r.2.clone())
     }
 }

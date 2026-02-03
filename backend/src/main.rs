@@ -1,8 +1,11 @@
 use anyhow::{Context, Result};
-use axum::{extract::State, routing::get, Json, Router};
+use async_graphql::http::GraphiQLSource;
+use async_graphql_axum::GraphQL;
+use axum::response::{Html, IntoResponse};
+use axum::{routing::get, Router};
+use backend::api::schema;
 use env_logger::Env;
 use log::info;
-use slurm_common::{db, ClusterState};
 
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::net::SocketAddr;
@@ -34,7 +37,10 @@ async fn main() -> Result<()> {
     let state = AppState { pool };
 
     let app = Router::new()
-        .route("/api/state", get(get_state))
+        .route(
+            "/api/graphql",
+            get(graphiql).post_service(GraphQL::new(schema())),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -47,9 +53,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn get_state(State(state): State<AppState>) -> Json<ClusterState> {
-    let raw_state = db::fetch_cluster_state(&state.pool)
-        .await
-        .unwrap_or_default();
-    Json(raw_state)
+async fn graphiql() -> impl IntoResponse {
+    Html(GraphiQLSource::build().endpoint("/api/graphql").finish())
 }

@@ -28,12 +28,6 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 
-interface User {
-  name: string
-  email: string
-  avatar: string
-}
-
 const user = {
   name: "ClusterNode",
   email: "clusternode@clusternode.com",
