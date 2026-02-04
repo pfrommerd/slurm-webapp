@@ -121,7 +121,7 @@ impl<'de> de::Deserializer<'de> for SlurmDeserializer<'de> {
             let value = raw_value.trim();
 
             // Skip "null" or None or N/A values
-            if value == "(null)" || value == "None" || value == "N/A" {
+            if value.is_empty() || value == "(null)" || value == "None" || value == "N/A" {
                 continue;
             }
             match map.entry(key) {

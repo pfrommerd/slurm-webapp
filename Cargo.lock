@@ -462,11 +462,11 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
- "slurm-common",
  "sqlx",
  "tokio",
  "tower 0.4.13",
  "tower-http",
+ "uuid",
 ]
 
 [[package]]
