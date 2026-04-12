@@ -1,0 +1,24 @@
+[package]
+name = "slurm-worker"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+
+[dependencies]
+slurm-common = { path = "../slurm-common", features = ["ssh"] }
+serde_json = { version = "1.0", features = ["raw_value"]}
+anyhow = "1.0"
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "io-util", "io-std"] }
+serde = { version = "1.0", features = ["derive"] }
+clap = { version = "4.5.56", features = ["derive"]}
+log = { version = "0.4"}
+env_logger = { version = "0.11"}
+chrono = { version = "0.4.43", features = ["serde"] }
+
+[[bin]]         
+name = "slurm-worker"    
+
+[[bin]]
+name = "slurm-worker-child"
+required-features = []

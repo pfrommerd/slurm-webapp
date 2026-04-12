@@ -1,4 +1,7 @@
 pub mod parser;
+
+#[cfg(feature = "ssh")]
+pub mod ssh;
 pub mod util;
 
 use anyhow::Result;
@@ -222,6 +225,13 @@ pub struct RawSlurmInfo {
 }
 
 impl RawSlurmInfo {
+    pub fn empty() -> Self {
+        Self {
+            nodes: String::new(),
+            partitions: String::new(),
+            jobs: String::new(),
+        }
+    }
     pub async fn from_local_system() -> Result<Self> {
         let (nodes, jobs, partitions) = tokio::join!(
             tokio::process::Command::new("scontrol")
@@ -272,6 +282,25 @@ impl RawSlurmInfo {
             nodes,
             partitions,
             jobs,
+        })
+    }
+}
+
+pub struct SlurmInfo {
+    raw: Box<RawSlurmInfo>,
+    parsed: SlurmCluster<'static>,
+}
+
+impl SlurmInfo {
+    pub fn new(raw: RawSlurmInfo) -> Result<Self> {
+        let boxed = Box::new(raw);
+        // SAFETY: We are transmuting the lifetime of the boxed, raw data.
+        // The we always constraint the return lifetime to the parsed struct
+        // to the lifetime of the SlurmInfo struct, so this is okay!
+        let parsed = raw.parse()?;
+        Ok(Self {
+            raw: Box::new(raw),
+            parsed,
         })
     }
 }
@@ -385,6 +414,114 @@ impl<'src> SlurmCluster<'src> {
             new_jobs,
             changed_jobs,
             removed_jobs,
+        }
+    }
+
+    pub fn apply(&mut self, diff: SlurmClusterDiff<'src>) {
+        // Nodes
+        for (name, node) in diff.new_nodes {
+            self.nodes.insert(name, node);
+        }
+        for (name, node_diff) in diff.changed_nodes {
+            if let Some(node) = self.nodes.get_mut(name) {
+                // Apply node diff - field by field
+                if let Some(state) = node_diff.state {
+                    node.state = state;
+                }
+                if let Some(cpu_alloc) = node_diff.cpu_alloc {
+                    node.cpu_alloc = cpu_alloc;
+                }
+                if let Some(cpus) = node_diff.cpus {
+                    node.cpus = cpus;
+                }
+                if let Some(real_memory) = node_diff.real_memory {
+                    node.real_memory = real_memory;
+                }
+                if let Some(alloc_mem) = node_diff.alloc_mem {
+                    node.alloc_mem = alloc_mem;
+                }
+                if let Some(free_mem) = node_diff.free_mem {
+                    node.free_mem = free_mem;
+                }
+                if let Some(partitions) = node_diff.partitions {
+                    node.partitions = partitions;
+                }
+                if let Some(resources) = node_diff.resources {
+                    node.resources = resources;
+                }
+                if let Some(allocated) = node_diff.allocated {
+                    node.allocated = allocated;
+                }
+            }
+        }
+        for name in diff.removed_nodes {
+            self.nodes.remove(name);
+        }
+
+        // Partitions
+        for (name, part) in diff.new_partitions {
+            self.partitions.insert(name, part);
+        }
+        for (name, part_diff) in diff.changed_partitions {
+            if let Some(part) = self.partitions.get_mut(name) {
+                if let Some(state) = part_diff.state {
+                    part.state = state;
+                }
+                if let Some(allow_qos) = part_diff.allow_qos {
+                    part.allow_qos = allow_qos;
+                }
+                if let Some(qos) = part_diff.qos {
+                    part.qos = qos;
+                }
+            }
+        }
+        for name in diff.removed_partitions {
+            self.partitions.remove(name);
+        }
+
+        // Jobs
+        for (name, job) in diff.new_jobs {
+            self.jobs.insert(name, job);
+        }
+        for (name, job_diff) in diff.changed_jobs {
+            if let Some(job) = self.jobs.get_mut(name) {
+                if let Some(partition) = job_diff.partition {
+                    job.partition = partition;
+                }
+                if let Some(user) = job_diff.user {
+                    job.user = user;
+                }
+                if let Some(state) = job_diff.state {
+                    job.state = state;
+                }
+                if let Some(num_cpus) = job_diff.num_cpus {
+                    job.num_cpus = num_cpus;
+                }
+                if let Some(num_nodes) = job_diff.num_nodes {
+                    job.num_nodes = num_nodes;
+                }
+                if let Some(node_list) = job_diff.node_list {
+                    job.node_list = node_list;
+                }
+                if let Some(req_res) = job_diff.req_res {
+                    job.req_res = req_res;
+                }
+                if let Some(alloc_res) = job_diff.alloc_res {
+                    job.alloc_res = alloc_res;
+                }
+                if let Some(submit_time) = job_diff.submit_time {
+                    job.submit_time = submit_time;
+                }
+                if let Some(start_time) = job_diff.start_time {
+                    job.start_time = start_time;
+                }
+                if let Some(time_limit) = job_diff.time_limit {
+                    job.time_limit = time_limit;
+                }
+            }
+        }
+        for name in diff.removed_jobs {
+            self.jobs.remove(name);
         }
     }
 }

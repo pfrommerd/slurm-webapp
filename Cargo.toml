@@ -1,8 +1,7 @@
 [workspace]
 members = [
-    "worker",
-    "monitor",
     "backend",
     "slurm-common",
+    "slurm-worker",
 ]
 resolver = "2"
